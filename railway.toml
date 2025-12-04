@@ -1,0 +1,26 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "playwright install chromium && python server.py"
+healthcheckPath = "/api/status"
+healthcheckTimeout = 300
+
+[[services]]
+name = "web"
+```
+Click **"Commit changes"**
+
+---
+
+**File 3:** Add file → Create new file
+
+Name it `.gitignore` and paste:
+```
+__pycache__/
+*.py[cod]
+venv/
+.env
+promo_data.json
+*.log
+.DS_Store
