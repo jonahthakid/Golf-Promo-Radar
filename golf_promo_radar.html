@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GOLF PROMO RADAR // SKRATCH EDITION</title>
+    <title>SKRATCH RADAR // Live Golf Promo Intel</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,6 +28,7 @@
                             green: '#00ff41',
                             greenDim: 'rgba(0, 255, 65, 0.2)',
                             red: '#ff3333',
+                            orange: '#ff9500',
                             white: '#e5e5e5'
                         }
                     },
@@ -53,7 +54,6 @@
     </script>
 
     <style>
-        /* Custom Radar Utilities */
         body {
             background-color: #050505;
             color: #e5e5e5;
@@ -83,6 +83,8 @@
             position: absolute;
             background: #00ff41;
             border-radius: 50%;
+            width: 8px;
+            height: 8px;
             transform: translate(-50%, -50%);
             box-shadow: 0 0 10px #00ff41;
             opacity: 0;
@@ -90,22 +92,59 @@
         }
 
         @keyframes blipAnim {
-            0% { opacity: 0; transform: scale(0.5); }
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
             45% { opacity: 0; }
-            50% { opacity: 1; transform: scale(1.5); }
-            100% { opacity: 0; transform: scale(0.5); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
         }
         
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #1a1a1a; border: 1px solid #00ff41; }
+        
+        .deal-card {
+            transition: all 0.3s ease;
         }
-        ::-webkit-scrollbar-track {
-            background: #0a0a0a; 
+        .deal-card:hover {
+            border-color: #00ff41;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.1);
         }
-        ::-webkit-scrollbar-thumb {
-            background: #1a1a1a; 
-            border: 1px solid #00ff41;
+        
+        .hot-deal {
+            border-color: #ff3333 !important;
+        }
+        .hot-deal:hover {
+            box-shadow: 0 0 20px rgba(255, 51, 51, 0.2);
+        }
+        
+        .code-copy {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .code-copy:hover {
+            background: #00ff41;
+            color: #000;
+        }
+        .code-copy.copied {
+            background: #00ff41;
+            color: #000;
+        }
+
+        .filter-btn.active {
+            background: rgba(0, 255, 65, 0.1);
+            color: #00ff41;
+            border-left-color: #00ff41;
+            border-left-width: 2px;
+        }
+
+        .tab-btn.active {
+            background: rgba(0, 255, 65, 0.1);
+            color: #00ff41;
+            border-bottom: 2px solid #00ff41;
+        }
+
+        .scanning .radar-sweep {
+            animation-duration: 1s;
         }
     </style>
 </head>
@@ -118,7 +157,7 @@
     <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden">
+                <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden" id="radar-icon">
                     <div class="absolute inset-0 radar-sweep animate-spin-slow"></div>
                     <i class="fas fa-crosshairs text-radar-green relative z-10 text-sm"></i>
                 </div>
@@ -132,14 +171,22 @@
                 </div>
             </div>
 
-            <!-- Refresh Button -->
-            <button onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
-                <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
-                <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
-                    <i class="fas fa-sync-alt group-hover:animate-spin"></i>
-                    Scan
-                </span>
-            </button>
+            <div class="flex items-center gap-4">
+                <!-- Last Updated -->
+                <div class="hidden sm:block text-right">
+                    <div class="text-[10px] text-gray-500 uppercase">Last Scan</div>
+                    <div class="text-xs text-radar-green" id="last-updated">--:--</div>
+                </div>
+                
+                <!-- Refresh Button -->
+                <button onclick="refreshScan()" id="scan-btn" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                    <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
+                    <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
+                        <i class="fas fa-satellite-dish" id="scan-icon"></i>
+                        <span id="scan-text">Scan</span>
+                    </span>
+                </button>
+            </div>
         </div>
     </header>
 
@@ -152,10 +199,10 @@
             <!-- Radar Visualization Panel -->
             <div class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
                 <div class="absolute top-2 left-2 text-xs text-radar-greenDim">SYS.MONITORING</div>
-                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE</div>
+                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast" id="live-indicator">● LIVE</div>
                 
                 <!-- The Radar Circle -->
-                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(0,255,65,0.1)]">
+                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(0,255,65,0.1)]" id="radar-visual">
                     <!-- Grid Rings -->
                     <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75"></div>
                     <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50"></div>
@@ -168,52 +215,64 @@
                     <!-- The Sweep -->
                     <div class="absolute inset-0 radar-sweep animate-spin-slow origin-center"></div>
                     
-                    <!-- Blips (Deals) -->
-                    <div class="blip top-[30%] left-[60%]" style="animation-delay: 0.5s"></div>
-                    <div class="blip top-[70%] left-[20%]" style="animation-delay: 1.2s"></div>
-                    <div class="blip top-[45%] left-[80%]" style="animation-delay: 2.8s"></div>
-                    <div class="blip top-[15%] left-[40%]" style="animation-delay: 3.5s"></div>
+                    <!-- Blips (dynamically positioned) -->
+                    <div id="blips-container"></div>
                 </div>
 
                 <div class="text-center font-loud text-2xl tracking-widest text-radar-green mt-2">
-                    <span id="target-count">045</span> TARGETS ACQUIRED
+                    <span id="target-count">000</span> TARGETS ACQUIRED
                 </div>
             </div>
 
             <!-- Stats HUD -->
             <div class="grid grid-cols-3 gap-2">
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
-                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Active</div>
-                    <div class="font-loud text-3xl text-white">45</div>
-                </div>
-                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
-                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Welcome</div>
-                    <div class="font-loud text-3xl text-radar-green">10</div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Promos</div>
+                    <div class="font-loud text-3xl text-white" id="stat-promos">0</div>
                 </div>
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
                     <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Codes</div>
-                    <div class="font-loud text-3xl text-radar-red">10</div>
+                    <div class="font-loud text-3xl text-radar-green" id="stat-codes">0</div>
+                </div>
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</div>
+                    <div class="font-loud text-3xl text-radar-orange" id="stat-email">0</div>
+                </div>
+            </div>
+
+            <!-- Search -->
+            <div class="bg-radar-dark border border-radar-grid p-4 rounded-sm">
+                <div class="relative">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-600"></i>
+                    <input type="text" id="search-input" placeholder="Search brands, codes..." 
+                        class="w-full bg-radar-black border border-radar-grid pl-10 pr-4 py-2 text-white placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors">
                 </div>
             </div>
 
             <!-- Categories -->
             <div class="bg-radar-dark border border-radar-grid p-4 rounded-sm">
                 <h3 class="font-loud text-xl text-white mb-4 border-b border-radar-grid pb-2">FILTER PROTOCOL</h3>
-                <div class="space-y-2">
-                    <button class="w-full text-left px-4 py-2 bg-radar-green/10 text-radar-green border-l-2 border-radar-green hover:bg-radar-green/20 transition-all font-bold">
+                <div class="space-y-1" id="filter-buttons">
+                    <button data-filter="all" class="filter-btn active w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
                         <i class="fas fa-globe-americas w-6"></i> ALL SECTORS
                     </button>
-                    <button class="w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                    <button data-filter="apparel" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
                         <i class="fas fa-tshirt w-6"></i> APPAREL
                     </button>
-                    <button class="w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                    <button data-filter="footwear" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
                         <i class="fas fa-shoe-prints w-6"></i> FOOTWEAR
                     </button>
-                    <button class="w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
-                        <i class="fas fa-shopping-bag w-6"></i> BAGS & TECH
+                    <button data-filter="bags" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                        <i class="fas fa-shopping-bag w-6"></i> BAGS & ACCESSORIES
                     </button>
-                    <button class="w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
-                        <i class="fas fa-golf-ball w-6"></i> OEM HARDWARE
+                    <button data-filter="oem" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                        <i class="fas fa-golf-ball w-6"></i> OEM / EQUIPMENT
+                    </button>
+                    <button data-filter="retailer" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                        <i class="fas fa-store w-6"></i> RETAILERS
+                    </button>
+                    <button data-filter="womens" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                        <i class="fas fa-venus w-6"></i> WOMEN'S
                     </button>
                 </div>
             </div>
@@ -222,133 +281,54 @@
         <!-- Right Column: Deal Feed -->
         <section class="lg:col-span-8 flex flex-col gap-4">
             
+            <!-- Tabs -->
+            <div class="flex gap-1 border-b border-radar-grid">
+                <button data-tab="promos" class="tab-btn active px-6 py-3 font-loud text-xl text-gray-500 hover:text-white transition-colors uppercase tracking-wider">
+                    Promos
+                </button>
+                <button data-tab="codes" class="tab-btn px-6 py-3 font-loud text-xl text-gray-500 hover:text-white transition-colors uppercase tracking-wider">
+                    Codes
+                </button>
+                <button data-tab="email" class="tab-btn px-6 py-3 font-loud text-xl text-gray-500 hover:text-white transition-colors uppercase tracking-wider">
+                    Email Offers
+                </button>
+            </div>
+
             <!-- Feed Header -->
-            <div class="flex justify-between items-end border-b-2 border-radar-green pb-2 mb-2">
-                <h2 class="font-loud text-4xl text-white">INCOMING TRANSMISSIONS</h2>
-                <span class="text-xs text-radar-green animate-pulse">LIVE FEED // UPDATED 2M AGO</span>
+            <div class="flex justify-between items-end pb-2">
+                <h2 class="font-loud text-3xl text-white" id="feed-title">INCOMING TRANSMISSIONS</h2>
+                <span class="text-xs text-radar-green animate-pulse" id="feed-status">SCANNING...</span>
             </div>
 
-            <!-- Featured Deal (Hot) -->
-            <div class="bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300">
-                <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">CRITICAL HIT</div>
-                <div class="absolute inset-0 bg-gradient-to-r from-radar-red/10 to-transparent opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <!-- Content Container -->
+            <div id="content-container">
+                <!-- Promos Tab -->
+                <div id="promos-tab" class="tab-content">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
+                        <!-- Loading state -->
+                        <div class="col-span-full text-center py-12 text-gray-500">
+                            <i class="fas fa-satellite-dish text-4xl mb-4 animate-pulse"></i>
+                            <div class="font-loud text-xl">ACQUIRING TARGETS...</div>
+                        </div>
+                    </div>
+                </div>
                 
-                <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-                    <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shrink-0 border-4 border-radar-black">
-                        <!-- Mock Logo -->
-                        <i class="fas fa-star text-3xl text-black"></i>
+                <!-- Codes Tab -->
+                <div id="codes-tab" class="tab-content hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="codes-grid">
                     </div>
-                    <div class="flex-grow">
-                        <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">TAYLORMADE GOLF</h3>
-                        <p class="text-gray-400 text-sm mb-2">Sitewide Sale Detected</p>
-                        <div class="flex flex-wrap gap-2 mt-2">
-                            <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">50% OFF</span>
-                            <span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase">CODE: RADAR50</span>
-                        </div>
-                    </div>
-                    <button class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors clip-path-slant">
-                        ACCESS
-                    </button>
                 </div>
-            </div>
-
-            <!-- Standard Deals Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
-                <!-- Javascript will populate this, but here are hardcoded examples for preview -->
                 
-                <!-- Card 1 -->
-                <div class="bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center">
-                                <i class="fas fa-flag text-black"></i>
-                            </div>
-                            <div>
-                                <h4 class="font-loud text-2xl text-white leading-none">CALLAWAY</h4>
-                                <span class="text-xs text-gray-500">OEM // Hardware</span>
-                            </div>
-                        </div>
-                        <span class="text-radar-green text-xs border border-radar-green px-1">NEW</span>
-                    </div>
-                    <p class="text-gray-400 text-sm mb-4 line-clamp-2">Pre-owned drivers restocked. Massive markdowns on Rogue ST models.</p>
-                    <div class="flex justify-between items-center border-t border-gray-800 pt-3">
-                        <span class="text-radar-green font-bold">UP TO 30% OFF</span>
-                        <a href="#" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                            View <i class="fas fa-chevron-right text-xs"></i>
-                        </a>
-                    </div>
-                </div>
-
-                <!-- Card 2 -->
-                <div class="bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center">
-                                <i class="fas fa-tshirt text-black"></i>
-                            </div>
-                            <div>
-                                <h4 class="font-loud text-2xl text-white leading-none">RHOBACK</h4>
-                                <span class="text-xs text-gray-500">Apparel // Soft</span>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="text-gray-400 text-sm mb-4 line-clamp-2">New Q-Zips dropped. First time buyer code active.</p>
-                    <div class="flex justify-between items-center border-t border-gray-800 pt-3">
-                        <span class="text-white bg-gray-800 px-2 py-0.5 text-xs font-mono">CODE: FIRST15</span>
-                        <a href="#" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                            View <i class="fas fa-chevron-right text-xs"></i>
-                        </a>
-                    </div>
-                </div>
-
-                <!-- Card 3 -->
-                <div class="bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center">
-                                <i class="fas fa-shoe-prints text-black"></i>
-                            </div>
-                            <div>
-                                <h4 class="font-loud text-2xl text-white leading-none">ADIDAS GOLF</h4>
-                                <span class="text-xs text-gray-500">Footwear // Spikes</span>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="text-gray-400 text-sm mb-4 line-clamp-2">Codechaos 22 models on clearance. Limited sizes.</p>
-                    <div class="flex justify-between items-center border-t border-gray-800 pt-3">
-                        <span class="text-radar-green font-bold">$89.99</span>
-                        <a href="#" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                            View <i class="fas fa-chevron-right text-xs"></i>
-                        </a>
-                    </div>
-                </div>
-
-                <!-- Card 4 -->
-                <div class="bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center">
-                                <i class="fas fa-globe text-black"></i>
-                            </div>
-                            <div>
-                                <h4 class="font-loud text-2xl text-white leading-none">GLOBAL GOLF</h4>
-                                <span class="text-xs text-gray-500">Retailer // Mixed</span>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="text-gray-400 text-sm mb-4 line-clamp-2">Stackable codes: 15% off used clubs + Free Shipping.</p>
-                    <div class="flex justify-between items-center border-t border-gray-800 pt-3">
-                        <span class="text-white bg-gray-800 px-2 py-0.5 text-xs font-mono">CODE: STACK15</span>
-                        <a href="#" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                            View <i class="fas fa-chevron-right text-xs"></i>
-                        </a>
+                <!-- Email Tab -->
+                <div id="email-tab" class="tab-content hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="email-grid">
                     </div>
                 </div>
             </div>
 
-            <!-- Loader / Scanner Line (Visual only, simulates fetching more) -->
+            <!-- Scanner Line -->
             <div class="w-full h-1 bg-gray-900 mt-4 overflow-hidden rounded-full">
-                <div class="h-full bg-radar-green w-1/3 animate-[scan_2s_ease-in-out_infinite]"></div>
+                <div class="h-full bg-radar-green w-1/3 animate-[scan_2s_ease-in-out_infinite]" id="scan-line"></div>
             </div>
 
         </section>
@@ -358,59 +338,370 @@
     <footer class="border-t border-radar-grid bg-radar-black py-8 mt-auto relative z-10">
         <div class="container mx-auto px-4 text-center">
             <div class="font-loud text-2xl text-white mb-2 tracking-widest">
-                GOLF PROMO <span class="text-radar-green">RADAR</span>
+                SKRATCH <span class="text-radar-green">RADAR</span>
             </div>
             <p class="text-gray-600 text-xs font-mono uppercase tracking-widest">
-                Scanning Brand Homepages • Updating Every 5 Mins • Skratch Golf Aesthetics
+                Scanning <span id="brand-count">0</span> Brands • Auto-Refresh Every 5 Min • Built for Skratch Golf
             </p>
         </div>
     </footer>
 
-    <!-- JS for Mock Interaction -->
     <script>
-        function refreshScan() {
-            const btnIcon = document.querySelector('.fa-sync-alt');
-            const radarText = document.getElementById('target-count');
-            
-            // Spin Icon
-            btnIcon.classList.add('animate-spin');
-            
-            // Randomize target count effect
-            let interval = setInterval(() => {
-                radarText.innerText = Math.floor(Math.random() * 999).toString().padStart(3, '0');
-            }, 50);
+        // =================================================================
+        // STATE
+        // =================================================================
+        let promoData = { promos: [], codes: [], emailOffers: [] };
+        let currentFilter = 'all';
+        let currentTab = 'promos';
+        let searchQuery = '';
 
-            setTimeout(() => {
-                clearInterval(interval);
-                btnIcon.classList.remove('animate-spin');
-                radarText.innerText = "045";
-                
-                // Show a fake toast/alert
-                const notification = document.createElement('div');
-                notification.className = 'fixed bottom-4 right-4 bg-radar-green text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(0,255,65,0.4)] z-50 transform translate-y-20 transition-transform duration-300';
-                notification.innerHTML = '<i class="fas fa-check-circle"></i> SCAN COMPLETE';
-                document.body.appendChild(notification);
-                
-                requestAnimationFrame(() => {
-                    notification.classList.remove('translate-y-20');
-                });
+        // =================================================================
+        // ICONS BY CATEGORY
+        // =================================================================
+        const categoryIcons = {
+            apparel: 'fa-tshirt',
+            footwear: 'fa-shoe-prints',
+            bags: 'fa-shopping-bag',
+            accessories: 'fa-hat-wizard',
+            oem: 'fa-golf-ball',
+            retailer: 'fa-store',
+            default: 'fa-tag'
+        };
 
-                setTimeout(() => {
-                    notification.classList.add('translate-y-20');
-                    setTimeout(() => notification.remove(), 300);
-                }, 3000);
-            }, 1500);
+        // =================================================================
+        // FETCH DATA
+        // =================================================================
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/promos');
+                promoData = await response.json();
+                updateUI();
+                updateBlips();
+            } catch (error) {
+                console.error('Failed to fetch:', error);
+                document.getElementById('feed-status').textContent = 'CONNECTION ERROR';
+                document.getElementById('feed-status').classList.remove('text-radar-green');
+                document.getElementById('feed-status').classList.add('text-radar-red');
+            }
         }
 
-        // Add subtle random glint to grid items
-        const gridItems = document.querySelectorAll('#deals-grid > div');
-        setInterval(() => {
-            const randomItem = gridItems[Math.floor(Math.random() * gridItems.length)];
-            randomItem.classList.add('border-radar-green');
+        // =================================================================
+        // UPDATE UI
+        // =================================================================
+        function updateUI() {
+            // Stats
+            document.getElementById('stat-promos').textContent = promoData.promos?.length || 0;
+            document.getElementById('stat-codes').textContent = promoData.codes?.length || 0;
+            document.getElementById('stat-email').textContent = promoData.emailOffers?.length || 0;
+            document.getElementById('target-count').textContent = String(promoData.promos?.length || 0).padStart(3, '0');
+            document.getElementById('brand-count').textContent = promoData.promos?.length || 0;
+
+            // Last updated
+            if (promoData.lastUpdated) {
+                const date = new Date(promoData.lastUpdated);
+                document.getElementById('last-updated').textContent = date.toLocaleTimeString();
+            }
+
+            document.getElementById('feed-status').textContent = 'LIVE FEED';
+            document.getElementById('feed-status').classList.remove('text-radar-red');
+            document.getElementById('feed-status').classList.add('text-radar-green');
+            
+            renderCurrentTab();
+        }
+
+        // =================================================================
+        // RENDER TABS
+        // =================================================================
+        function renderCurrentTab() {
+            if (currentTab === 'promos') renderPromos();
+            else if (currentTab === 'codes') renderCodes();
+            else if (currentTab === 'email') renderEmailOffers();
+        }
+
+        function renderPromos() {
+            const grid = document.getElementById('deals-grid');
+            let promos = promoData.promos || [];
+            
+            // Filter
+            if (currentFilter !== 'all') {
+                if (currentFilter === 'womens') {
+                    promos = promos.filter(p => p.tags?.includes('womens'));
+                } else if (currentFilter === 'bags') {
+                    promos = promos.filter(p => p.category === 'bags' || p.category === 'accessories' || p.tags?.includes('bags'));
+                } else {
+                    promos = promos.filter(p => p.category === currentFilter || p.tags?.includes(currentFilter));
+                }
+            }
+            
+            // Search
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                promos = promos.filter(p => 
+                    p.brand?.toLowerCase().includes(q) || 
+                    p.promo?.toLowerCase().includes(q) ||
+                    p.code?.toLowerCase().includes(q) ||
+                    p.tags?.some(t => t.toLowerCase().includes(q))
+                );
+            }
+
+            if (promos.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <i class="fas fa-satellite text-4xl mb-4"></i>
+                        <div class="font-loud text-xl">NO TARGETS IN SECTOR</div>
+                        <div class="text-sm mt-2">Try adjusting your filters</div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort: hot deals first (50%+ off)
+            promos.sort((a, b) => {
+                const aDiscount = extractDiscount(a.promo);
+                const bDiscount = extractDiscount(b.promo);
+                return bDiscount - aDiscount;
+            });
+
+            grid.innerHTML = promos.map((promo, idx) => {
+                const discount = extractDiscount(promo.promo);
+                const isHot = discount >= 40;
+                const isCritical = discount >= 50;
+                const icon = categoryIcons[promo.category] || categoryIcons.default;
+                
+                return `
+                    <div class="deal-card bg-radar-dark border ${isCritical ? 'border-radar-red hot-deal' : 'border-radar-grid'} p-5 relative group">
+                        ${isCritical ? '<div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-2 py-0.5 text-sm">🔥 CRITICAL</div>' : ''}
+                        ${isHot && !isCritical ? '<div class="absolute top-0 right-0 bg-radar-orange text-black font-loud px-2 py-0.5 text-sm">HOT</div>' : ''}
+                        
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center shrink-0">
+                                    <i class="fas ${icon} text-black"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <h4 class="font-loud text-2xl text-white leading-none truncate">${promo.brand}</h4>
+                                    <span class="text-xs text-gray-500">${promo.category?.toUpperCase() || 'APPAREL'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <p class="text-gray-400 text-sm mb-4 line-clamp-2">${promo.promo}</p>
+                        
+                        <div class="flex flex-wrap gap-2 mb-3">
+                            ${promo.code ? `
+                                <span class="code-copy px-2 py-1 bg-gray-800 text-radar-green border border-radar-green/50 text-xs font-bold uppercase" 
+                                      onclick="copyCode('${promo.code}', this)">
+                                    <i class="fas fa-copy mr-1"></i>${promo.code}
+                                </span>
+                            ` : ''}
+                            ${discount > 0 ? `<span class="px-2 py-1 bg-radar-green/20 text-radar-green border border-radar-green/50 text-xs font-bold">${discount}% OFF</span>` : ''}
+                        </div>
+                        
+                        <div class="flex justify-between items-center border-t border-gray-800 pt-3">
+                            <div class="flex gap-1 overflow-hidden">
+                                ${(promo.tags || []).slice(0, 2).map(tag => `
+                                    <span class="text-[10px] text-gray-600 uppercase">#${tag}</span>
+                                `).join('')}
+                            </div>
+                            <a href="${promo.url}" target="_blank" rel="noopener" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform shrink-0">
+                                Access <i class="fas fa-chevron-right text-xs"></i>
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCodes() {
+            const grid = document.getElementById('codes-grid');
+            const codes = promoData.codes || [];
+
+            if (codes.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <i class="fas fa-key text-4xl mb-4"></i>
+                        <div class="font-loud text-xl">NO ACTIVE CODES DETECTED</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = codes.map(code => `
+                <div class="bg-radar-dark border border-radar-grid p-4 hover:border-radar-green transition-colors">
+                    <div class="font-loud text-xl text-white mb-2 truncate">${code.brand}</div>
+                    <div class="code-copy bg-radar-black border border-radar-green px-4 py-3 text-center cursor-pointer hover:bg-radar-green hover:text-black transition-all"
+                         onclick="copyCode('${code.code}', this)">
+                        <i class="fas fa-copy mr-2"></i>
+                        <span class="font-bold text-lg tracking-widest">${code.code}</span>
+                    </div>
+                    <div class="text-sm text-gray-500 mt-2 truncate">${code.discount || ''}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderEmailOffers() {
+            const grid = document.getElementById('email-grid');
+            const offers = promoData.emailOffers || [];
+
+            if (offers.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <i class="fas fa-envelope text-4xl mb-4"></i>
+                        <div class="font-loud text-xl">NO EMAIL OFFERS DETECTED</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = offers.map(offer => `
+                <div class="bg-radar-dark border border-radar-grid p-5 hover:border-radar-green transition-colors">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="w-10 h-10 bg-radar-green/20 rounded-full flex items-center justify-center shrink-0">
+                            <i class="fas fa-envelope text-radar-green"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h4 class="font-loud text-xl text-white truncate">${offer.brand}</h4>
+                            <span class="text-xs text-gray-500">${offer.method || 'EMAIL SIGNUP'}</span>
+                        </div>
+                    </div>
+                    <p class="text-gray-400 text-sm">${offer.offer}</p>
+                </div>
+            `).join('');
+        }
+
+        // =================================================================
+        // HELPERS
+        // =================================================================
+        function extractDiscount(text) {
+            if (!text) return 0;
+            const match = text.match(/(\d+)%/);
+            return match ? parseInt(match[1]) : 0;
+        }
+
+        function copyCode(code, element) {
+            navigator.clipboard.writeText(code);
+            element.classList.add('copied');
+            const originalHTML = element.innerHTML;
+            element.innerHTML = '<i class="fas fa-check mr-1"></i>COPIED!';
             setTimeout(() => {
-                randomItem.classList.remove('border-radar-green');
-            }, 200);
-        }, 3000);
+                element.classList.remove('copied');
+                element.innerHTML = originalHTML;
+            }, 2000);
+        }
+
+        function updateBlips() {
+            const container = document.getElementById('blips-container');
+            const count = Math.min(promoData.promos?.length || 0, 8);
+            
+            let blipsHTML = '';
+            for (let i = 0; i < count; i++) {
+                const top = 15 + Math.random() * 70;
+                const left = 15 + Math.random() * 70;
+                const delay = Math.random() * 4;
+                blipsHTML += `<div class="blip" style="top: ${top}%; left: ${left}%; animation-delay: ${delay}s; width: 6px; height: 6px;"></div>`;
+            }
+            container.innerHTML = blipsHTML;
+        }
+
+        // =================================================================
+        // REFRESH
+        // =================================================================
+        async function refreshScan() {
+            const btn = document.getElementById('scan-btn');
+            const icon = document.getElementById('scan-icon');
+            const text = document.getElementById('scan-text');
+            const radar = document.getElementById('radar-icon');
+            
+            btn.disabled = true;
+            icon.classList.add('animate-spin');
+            text.textContent = 'Scanning...';
+            radar.classList.add('scanning');
+            document.getElementById('feed-status').textContent = 'SCANNING...';
+
+            try {
+                await fetch('/api/refresh', { method: 'POST' });
+                
+                // Wait for scrape to complete
+                await new Promise(r => setTimeout(r, 3000));
+                await fetchData();
+                
+                showNotification('SCAN COMPLETE', 'success');
+            } catch (error) {
+                showNotification('SCAN FAILED', 'error');
+            }
+
+            btn.disabled = false;
+            icon.classList.remove('animate-spin');
+            text.textContent = 'Scan';
+            radar.classList.remove('scanning');
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-radar-green' : 'bg-radar-red';
+            notification.className = `fixed bottom-4 right-4 ${bgColor} text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(0,255,65,0.4)] z-[100] transform translate-y-20 transition-transform duration-300`;
+            notification.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i> ${message}`;
+            document.body.appendChild(notification);
+            
+            requestAnimationFrame(() => notification.classList.remove('translate-y-20'));
+            setTimeout(() => {
+                notification.classList.add('translate-y-20');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // =================================================================
+        // EVENT LISTENERS
+        // =================================================================
+        // Filters
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                renderCurrentTab();
+            });
+        });
+
+        // Tabs
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+                document.getElementById(`${btn.dataset.tab}-tab`).classList.remove('hidden');
+                
+                currentTab = btn.dataset.tab;
+                renderCurrentTab();
+            });
+        });
+
+        // Search
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            renderCurrentTab();
+        });
+
+        // =================================================================
+        // INIT
+        // =================================================================
+        fetchData();
+        
+        // Auto-refresh every 5 minutes
+        setInterval(fetchData, 5 * 60 * 1000);
+        
+        // Subtle random grid glint effect
+        setInterval(() => {
+            const cards = document.querySelectorAll('.deal-card');
+            if (cards.length > 0) {
+                const randomCard = cards[Math.floor(Math.random() * cards.length)];
+                randomCard.style.borderColor = '#00ff41';
+                setTimeout(() => {
+                    randomCard.style.borderColor = '';
+                }, 200);
+            }
+        }, 4000);
     </script>
 </body>
 </html>
