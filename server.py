@@ -55,6 +55,7 @@ BRANDS = [
     {"name": "Zero Restriction", "url": "https://www.zerorestriction.com", "category": "apparel", "tags": ["premium", "outerwear"]},
     {"name": "Dunning Golf", "url": "https://dunninggolf.com", "category": "apparel", "tags": ["premium", "classic"]},
     {"name": "Kjus", "url": "https://www.kjus.com/us/golf", "category": "apparel", "tags": ["premium", "european", "tech"]},
+    {"name": "Bogner", "url": "https://www.bogner.com/en-us/", "category": "apparel", "tags": ["premium", "luxury", "german"]},
     {"name": "Southern Tide", "url": "https://www.southerntide.com", "category": "apparel", "tags": ["premium", "southern"]},
     
     # ==========================================================================
@@ -72,7 +73,13 @@ BRANDS = [
     {"name": "Quiet Golf", "url": "https://quietgolf.com", "category": "apparel", "tags": ["lifestyle", "minimalist"]},
     {"name": "Whim Golf", "url": "https://whimgolf.com", "category": "apparel", "tags": ["lifestyle", "streetwear"]},
     {"name": "Manors", "url": "https://manorsgolf.com", "category": "apparel", "tags": ["lifestyle", "uk"]},
+    {"name": "The Golfer's Journal", "url": "https://www.thegolfersjournal.co", "category": "apparel", "tags": ["lifestyle", "media"]},
     {"name": "Swing Juice", "url": "https://swingjuice.com", "category": "apparel", "tags": ["lifestyle", "fun"]},
+    {"name": "Blackballed Golf", "url": "https://blackballedgolf.com", "category": "apparel", "tags": ["lifestyle", "diversity"]},
+    {"name": "Gumtree Golf", "url": "https://gumtreegolf.com", "category": "apparel", "tags": ["lifestyle", "nature"]},
+    {"name": "WAAC Golf", "url": "https://waacgolf.com", "category": "apparel", "tags": ["lifestyle", "korean"]},
+    {"name": "ANEW Golf", "url": "https://anewgolf.com", "category": "apparel", "tags": ["lifestyle", "korean", "womens"]},
+    {"name": "Miura Golf", "url": "https://miuragolf.com", "category": "apparel", "tags": ["lifestyle", "premium", "oem"]},
     
     # ==========================================================================
     # WOMEN'S FOCUSED
@@ -83,11 +90,21 @@ BRANDS = [
     {"name": "Daily Sports", "url": "https://us.dailysports.com", "category": "apparel", "tags": ["womens", "european"]},
     {"name": "Fore All", "url": "https://www.foreall.com", "category": "apparel", "tags": ["womens", "inclusive"]},
     {"name": "KINONA", "url": "https://kinonasport.com", "category": "apparel", "tags": ["womens", "performance"]},
+    {"name": "A. Putnam", "url": "https://aputnam.com", "category": "apparel", "tags": ["womens", "luxury"]},
     {"name": "Belyn Key", "url": "https://belynkey.com", "category": "apparel", "tags": ["womens", "classic"]},
     {"name": "GGblue", "url": "https://ggbluegolf.com", "category": "apparel", "tags": ["womens", "performance"]},
+    {"name": "LIJA", "url": "https://lijastyle.com", "category": "apparel", "tags": ["womens", "activewear"]},
     {"name": "Jofit", "url": "https://www.jofit.com", "category": "apparel", "tags": ["womens", "performance"]},
+    {"name": "EP Pro / EPNY", "url": "https://epnygolf.com", "category": "apparel", "tags": ["womens", "classic"]},
     {"name": "Golftini", "url": "https://golftini.com", "category": "apparel", "tags": ["womens", "fun"]},
-    {"name": "EPNY Golf", "url": "https://epnygolf.com", "category": "apparel", "tags": ["womens", "classic"]},
+    {"name": "Course & Club", "url": "https://courseandclub.com", "category": "apparel", "tags": ["womens", "lifestyle"]},
+    {"name": "Beldrie", "url": "https://beldrie.com", "category": "apparel", "tags": ["womens", "beginner"]},
+    {"name": "Draw and Fade", "url": "https://drawandfade.com", "category": "apparel", "tags": ["womens", "modern"]},
+    {"name": "Famara Golf", "url": "https://famaragolf.com", "category": "apparel", "tags": ["womens", "uk", "art"]},
+    {"name": "Fairmonde", "url": "https://fairmonde.com", "category": "apparel", "tags": ["womens", "new"]},
+    {"name": "Jayebird", "url": "https://jayebirdgolf.com", "category": "apparel", "tags": ["womens", "classic"]},
+    {"name": "Hedge Golf", "url": "https://hedgegolf.com", "category": "apparel", "tags": ["womens", "preppy"]},
+    {"name": "Prio Golf", "url": "https://priogolf.com", "category": "apparel", "tags": ["womens", "lifestyle"]},
     
     # ==========================================================================
     # MID-TIER / VALUE APPAREL
@@ -103,7 +120,12 @@ BRANDS = [
     {"name": "Rhone", "url": "https://www.rhone.com", "category": "apparel", "tags": ["mid-tier", "performance"]},
     {"name": "Bonobos Golf", "url": "https://bonobos.com/shop/golf", "category": "apparel", "tags": ["mid-tier", "pants"]},
     {"name": "Original Penguin Golf", "url": "https://www.originalpenguin.com/collections/golf", "category": "apparel", "tags": ["mid-tier", "heritage"]},
+    {"name": "Walter Hagen", "url": "https://www.dickssportinggoods.com/f/walter-hagen-golf-apparel", "category": "apparel", "tags": ["value", "dicks"]},
+    {"name": "PGA TOUR Apparel", "url": "https://pgatour.com/shop", "category": "apparel", "tags": ["value", "tour"]},
     {"name": "Wilson Golf Apparel", "url": "https://www.wilson.com/en-us/golf/apparel", "category": "apparel", "tags": ["value", "heritage"]},
+    {"name": "Amazon Essentials Golf", "url": "https://www.amazon.com/stores/page/E48ACFEA-F0D9-4E34-9C2E-6ABEEF9EDE9C", "category": "apparel", "tags": ["value", "budget"]},
+    {"name": "Uniqlo", "url": "https://www.uniqlo.com/us/en/", "category": "apparel", "tags": ["value", "basics"]},
+    {"name": "Maelreg", "url": "https://maelreg.com", "category": "apparel", "tags": ["value", "amazon"]},
     {"name": "Brady Brand", "url": "https://bradybrand.com", "category": "apparel", "tags": ["mid-tier", "tom-brady"]},
     
     # ==========================================================================
@@ -112,8 +134,10 @@ BRANDS = [
     {"name": "FootJoy", "url": "https://www.footjoy.com", "category": "footwear", "tags": ["footwear", "tour", "classic"]},
     {"name": "True Linkswear", "url": "https://truelinkswear.com", "category": "footwear", "tags": ["footwear", "comfort"]},
     {"name": "Ecco Golf", "url": "https://us.ecco.com/golf/", "category": "footwear", "tags": ["footwear", "comfort"]},
+    {"name": "Duca del Cosma", "url": "https://ducadelcosma.com", "category": "footwear", "tags": ["footwear", "italian"]},
     {"name": "Cuater Golf", "url": "https://cuatergolf.com", "category": "footwear", "tags": ["footwear", "travismathew"]},
     {"name": "Sqairz Golf", "url": "https://sqairz.com", "category": "footwear", "tags": ["footwear", "performance"]},
+    {"name": "Athalonz Golf", "url": "https://athalonz.com", "category": "footwear", "tags": ["footwear", "performance"]},
     
     # ==========================================================================
     # BAGS & TRAVEL
@@ -123,6 +147,8 @@ BRANDS = [
     {"name": "Sun Mountain", "url": "https://www.sunmountain.com", "category": "bags", "tags": ["bags", "carts"]},
     {"name": "Jones Golf Bags", "url": "https://www.jonessportsco.com", "category": "bags", "tags": ["bags", "carry", "classic"]},
     {"name": "OGIO Golf", "url": "https://www.ogio.com/golf/", "category": "bags", "tags": ["bags", "callaway"]},
+    {"name": "Subtle Patriot", "url": "https://subtlepatriot.com", "category": "bags", "tags": ["bags", "usa"]},
+    {"name": "Club Glove", "url": "https://clubglove.com", "category": "bags", "tags": ["bags", "travel"]},
     {"name": "Sunday Golf", "url": "https://sundaygolf.com", "category": "bags", "tags": ["bags", "lightweight"]},
     {"name": "Ghost Golf", "url": "https://ghostgolf.com", "category": "bags", "tags": ["bags", "accessories", "towels"]},
     
@@ -133,13 +159,23 @@ BRANDS = [
     {"name": "Rose & Fire", "url": "https://www.roseandfire.com", "category": "accessories", "tags": ["headcovers", "premium"]},
     {"name": "PRG Golf", "url": "https://prg.golf", "category": "accessories", "tags": ["headcovers", "irish"]},
     {"name": "Ace of Clubs Golf", "url": "https://www.aceofclubsgolfco.com", "category": "accessories", "tags": ["accessories", "leather"]},
+    {"name": "Daphne's Headcovers", "url": "https://www.daphnesheadcovers.com", "category": "accessories", "tags": ["headcovers", "novelty"]},
+    {"name": "Cayce Golf", "url": "https://caycegolf.com", "category": "accessories", "tags": ["headcovers", "custom"]},
+    {"name": "Dormie Workshop", "url": "https://dormieworkshop.com", "category": "accessories", "tags": ["headcovers", "leather"]},
     {"name": "Seamus Golf", "url": "https://seamusgolf.com", "category": "accessories", "tags": ["headcovers", "wool"]},
+    {"name": "Nevr Looz", "url": "https://nevrlooz.com", "category": "accessories", "tags": ["accessories", "tools"]},
     {"name": "Transfusion Golf", "url": "https://transfusiongolf.com", "category": "accessories", "tags": ["accessories", "drinkware"]},
+    {"name": "Fore Ewe", "url": "https://foreewe.com", "category": "accessories", "tags": ["headcovers", "sheep"]},
+    {"name": "Winston Collection", "url": "https://winstoncollection.com", "category": "accessories", "tags": ["accessories", "leather"]},
+    {"name": "VivanTee Golf", "url": "https://vivanteegolf.com", "category": "accessories", "tags": ["accessories", "gloves"]},
+    {"name": "Branded Bills", "url": "https://www.brandedbills.com", "category": "accessories", "tags": ["hats", "state"]},
     {"name": "Melin", "url": "https://melin.com", "category": "accessories", "tags": ["hats", "premium"]},
     {"name": "Imperial Headwear", "url": "https://imperialsports.com", "category": "accessories", "tags": ["hats", "tour"]},
+    {"name": "Pukka Golf", "url": "https://pukka.com", "category": "accessories", "tags": ["hats", "custom"]},
+    {"name": "Oakley Golf", "url": "https://www.oakley.com/en-us/category/golf", "category": "accessories", "tags": ["eyewear", "sunglasses"]},
     
     # ==========================================================================
-    # OEM / EQUIPMENT
+    # OEM / EQUIPMENT (with apparel)
     # ==========================================================================
     {"name": "TaylorMade", "url": "https://www.taylormadegolf.com", "category": "oem", "tags": ["clubs", "apparel"]},
     {"name": "Callaway Golf", "url": "https://www.callawaygolf.com", "category": "oem", "tags": ["clubs", "balls"]},
@@ -152,13 +188,27 @@ BRANDS = [
     {"name": "Mizuno Golf", "url": "https://mizunogolf.com", "category": "oem", "tags": ["irons", "apparel"]},
     {"name": "Bridgestone Golf", "url": "https://www.bridgestonegolf.com", "category": "oem", "tags": ["balls", "clubs"]},
     {"name": "PXG", "url": "https://www.pxg.com", "category": "oem", "tags": ["clubs", "premium", "apparel"]},
+    {"name": "Wilson Sporting Goods", "url": "https://www.wilson.com/en-us/golf", "category": "oem", "tags": ["clubs", "balls"]},
     {"name": "Tour Edge", "url": "https://www.touredge.com", "category": "oem", "tags": ["clubs", "value"]},
+    {"name": "Honma Golf", "url": "https://us.honmagolf.com", "category": "oem", "tags": ["clubs", "japanese", "luxury"]},
     {"name": "Bettinardi Golf", "url": "https://bettinardi.com", "category": "oem", "tags": ["putters", "premium"]},
+    {"name": "Scotty Cameron", "url": "https://www.scottycameron.com", "category": "oem", "tags": ["putters", "titleist"]},
+    {"name": "Odyssey Golf", "url": "https://www.odysseygolf.com", "category": "oem", "tags": ["putters", "callaway"]},
+    {"name": "XXIO Golf", "url": "https://www.xxio.com/us/", "category": "oem", "tags": ["clubs", "lightweight"]},
+    {"name": "Ben Hogan Golf", "url": "https://benhogangolf.com", "category": "oem", "tags": ["clubs", "heritage"]},
+    {"name": "L.A.B. Golf", "url": "https://labgolf.com", "category": "oem", "tags": ["putters", "lie-angle"]},
+    {"name": "Maxfli", "url": "https://www.maxfli.com", "category": "oem", "tags": ["balls", "dicks"]},
     {"name": "Vice Golf", "url": "https://www.vicegolf.com", "category": "oem", "tags": ["balls", "dtc"]},
     {"name": "OnCore Golf", "url": "https://oncoregolf.com", "category": "oem", "tags": ["balls", "dtc"]},
     {"name": "Snell Golf", "url": "https://www.snellgolf.com", "category": "oem", "tags": ["balls", "dtc"]},
+    {"name": "Seed Golf", "url": "https://seedgolf.com", "category": "oem", "tags": ["balls", "dtc"]},
     {"name": "Cut Golf", "url": "https://cutgolf.co", "category": "oem", "tags": ["balls", "dtc"]},
     {"name": "SuperStroke", "url": "https://superstrokeusa.com", "category": "oem", "tags": ["grips", "putters"]},
+    {"name": "Golf Pride", "url": "https://www.golfpride.com", "category": "oem", "tags": ["grips"]},
+    {"name": "Lamkin Grips", "url": "https://www.lamkingrips.com", "category": "oem", "tags": ["grips"]},
+    {"name": "Fujikura Golf", "url": "https://www.fujikuragolf.com", "category": "oem", "tags": ["shafts"]},
+    {"name": "Project X Golf", "url": "https://www.projectxgolf.com", "category": "oem", "tags": ["shafts", "true-temper"]},
+    {"name": "Graphite Design", "url": "https://www.graphitedesign.com", "category": "oem", "tags": ["shafts", "japanese"]},
     
     # ==========================================================================
     # RETAILERS
@@ -172,11 +222,17 @@ BRANDS = [
     {"name": "Golf Apparel Shop", "url": "https://www.golfapparelshop.com", "category": "retailer", "tags": ["apparel", "value"]},
     {"name": "Trendy Golf", "url": "https://www.trendygolfusa.com", "category": "retailer", "tags": ["premium", "curated"]},
     {"name": "Worldwide Golf Shops", "url": "https://www.worldwidegolfshops.com", "category": "retailer", "tags": ["multi-brand"]},
+    {"name": "Golf Discount", "url": "https://www.golfdiscount.com", "category": "retailer", "tags": ["discount", "seattle"]},
     {"name": "Budget Golf", "url": "https://www.budgetgolf.com", "category": "retailer", "tags": ["discount"]},
+    {"name": "Fairway Golf", "url": "https://fairwaygolfusa.com", "category": "retailer", "tags": ["japanese", "jdm"]},
     {"name": "Golf Locker", "url": "https://www.golflocker.com", "category": "retailer", "tags": ["apparel", "accessories"]},
     {"name": "The Golf Warehouse", "url": "https://www.tgw.com", "category": "retailer", "tags": ["multi-brand"]},
+    {"name": "Rain or Shine Golf", "url": "https://rainorshinegolf.com", "category": "retailer", "tags": ["simulators", "equipment"]},
     {"name": "Golf Avenue", "url": "https://www.golfavenue.com", "category": "retailer", "tags": ["used", "canada"]},
-    {"name": "Dick's Sporting Goods Golf", "url": "https://www.dickssportinggoods.com/f/golf", "category": "retailer", "tags": ["big-box"]},
+    {"name": "Golf Headquarters", "url": "https://www.golfheadquarters.com", "category": "retailer", "tags": ["multi-brand"]},
+    {"name": "Golfers Warehouse", "url": "https://www.golferswarehouse.com", "category": "retailer", "tags": ["northeast"]},
+    {"name": "Dick's Sporting Goods", "url": "https://www.dickssportinggoods.com/f/golf", "category": "retailer", "tags": ["big-box"]},
+    {"name": "Amazon Golf", "url": "https://www.amazon.com/golf/b?node=3410851", "category": "retailer", "tags": ["marketplace"]},
 ]
 
 # Merge affiliate links into brands list
