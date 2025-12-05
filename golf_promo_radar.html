@@ -164,6 +164,11 @@
             color: black;
         }
 
+        /* Deal card as link */
+        a.deal-card {
+            text-decoration: none;
+        }
+
         /* Scanning state */
         .scanning .radar-sweep {
             animation-duration: 1s;
@@ -172,6 +177,10 @@
         /* Marquee continuous scroll */
         .marquee-track {
             animation: marqueeScroll 20s linear infinite;
+        }
+        
+        .marquee-track a {
+            cursor: pointer;
         }
 
         @keyframes marqueeScroll {
@@ -373,9 +382,9 @@
         </section>
     </main>
 
-    <!-- Intel Marquee -->
-    <div class="bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black relative z-20">
-        <div class="marquee-track flex">
+    <!-- Intel Marquee - Fixed at bottom -->
+    <div class="fixed bottom-0 left-0 right-0 bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black z-[60]">
+        <div class="marquee-track flex" id="marquee-track">
             <div class="marquee-content flex-shrink-0 px-4" id="marquee-text">
                 SCANNING FOR DEALS ... STAND BY FOR INTEL ...
             </div>
@@ -386,7 +395,7 @@
     </div>
 
     <!-- Footer -->
-    <footer class="bg-radar-black py-8 relative z-10">
+    <footer class="bg-radar-black py-8 pb-16 relative z-10">
         <div class="container mx-auto px-4 text-center">
             <div class="font-loud text-2xl text-white mb-2 tracking-widest">
                 GOLF PROMO <span class="text-radar-green">RADAR</span>
@@ -580,7 +589,7 @@
                 const linkUrl = p.affiliate_url || p.url;
                 
                 return `
-                    <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 cursor-crosshair overflow-hidden ${isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
                         <div class="target-corner tl"></div>
                         <div class="target-corner tr"></div>
                         <div class="target-corner bl"></div>
@@ -602,16 +611,16 @@
                         <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
                         
                         <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
-                            ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-mono" onclick="copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
-                            <a href="${linkUrl}" target="_blank" rel="noopener" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                            ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-mono" onclick="event.preventDefault(); event.stopPropagation(); copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
+                            <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                 View <i class="fas fa-chevron-right text-xs"></i>
-                            </a>
+                            </span>
                         </div>
                         
                         <div class="lock-status absolute inset-0 flex items-center justify-center pointer-events-none">
                             <span class="text-radar-green/10 text-4xl font-loud tracking-widest uppercase transform -rotate-12 group-hover:text-radar-green/20">TARGET LOCKED</span>
                         </div>
-                    </div>
+                    </a>
                 `;
             }).join('');
         }
@@ -796,19 +805,20 @@
         }
 
         // =================================================================
-        // MARQUEE
+        // MARQUEE - Clickable items
         // =================================================================
         function updateMarquee() {
             const promos = promoData.promos?.filter(p => p.promo) || [];
             if (promos.length === 0) return;
             
-            const highlights = promos.slice(0, 10).map(p => 
-                `${p.brand.toUpperCase()}: ${p.promo.toUpperCase()}`
-            ).join(' ... ');
+            const highlights = promos.slice(0, 15).map(p => {
+                const linkUrl = p.affiliate_url || p.url;
+                return `<a href="${linkUrl}" target="_blank" rel="noopener" class="hover:underline hover:text-white transition-colors">${p.brand.toUpperCase()}: ${p.promo.toUpperCase()}</a>`;
+            }).join(' <span class="mx-4 opacity-50">•</span> ');
             
-            const text = highlights + ' ... ';
-            document.getElementById('marquee-text').textContent = text;
-            document.getElementById('marquee-text-2').textContent = text;
+            const content = highlights + ' <span class="mx-4 opacity-50">•</span> ';
+            document.getElementById('marquee-text').innerHTML = content;
+            document.getElementById('marquee-text-2').innerHTML = content;
         }
 
         // =================================================================
@@ -921,7 +931,7 @@
 
         function highlightNewCode(code) {
             setTimeout(() => {
-                const cards = document.querySelectorAll('.deal-card');
+                const cards = document.querySelectorAll('a.deal-card');
                 cards.forEach(card => {
                     if (card.dataset.code === code) {
                         card.classList.add('new-code-highlight');
@@ -954,7 +964,7 @@
         // GREEN FLASH = Cards WITH promo codes (most actionable)
         // =================================================================
         setInterval(() => {
-            const cards = document.querySelectorAll('.deal-card');
+            const cards = document.querySelectorAll('a.deal-card');
             const cardsWithCodes = Array.from(cards).filter(card => card.dataset.code);
             
             if (cardsWithCodes.length > 0) {
