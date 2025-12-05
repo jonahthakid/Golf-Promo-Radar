@@ -525,6 +525,7 @@
                 const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
                 
                 if (discount >= 40) {
+                    const linkUrl = top.affiliate_url || top.url;
                     featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
                     featured.innerHTML = `
                         <div class="target-corner tl border-radar-red"></div>
@@ -545,7 +546,7 @@
                                     ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
                                 </div>
                             </div>
-                            <a href="${top.url}" target="_blank" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
                                 ACCESS
                             </a>
                         </div>
@@ -576,6 +577,7 @@
                 const discount = p.promo?.match(/(\d+)%/)?.[1] || 0;
                 const isHot = discount >= 30;
                 const icon = getCategoryIcon(p.category);
+                const linkUrl = p.affiliate_url || p.url;
                 
                 return `
                     <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 cursor-crosshair overflow-hidden ${isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
@@ -601,7 +603,7 @@
                         
                         <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
                             ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-mono" onclick="copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
-                            <a href="${p.url}" target="_blank" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                 View <i class="fas fa-chevron-right text-xs"></i>
                             </a>
                         </div>
