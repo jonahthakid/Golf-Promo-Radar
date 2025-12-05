@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SKRATCH RADAR // Live Golf Promo Intel</title>
+    <title>GOLF PROMO RADAR // SKRATCH EDITION</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -41,11 +41,16 @@
                         'ping-slow': 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite',
                         'scan': 'scan 4s linear infinite',
                         'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'marquee': 'marquee 30s linear infinite',
                     },
                     keyframes: {
                         scan: {
                             '0%': { transform: 'translateY(-100%)' },
                             '100%': { transform: 'translateY(100%)' }
+                        },
+                        marquee: {
+                            '0%': { transform: 'translateX(100%)' },
+                            '100%': { transform: 'translateX(-100%)' }
                         }
                     }
                 }
@@ -81,10 +86,10 @@
 
         .blip {
             position: absolute;
+            width: 6px;
+            height: 6px;
             background: #00ff41;
             border-radius: 50%;
-            width: 8px;
-            height: 8px;
             transform: translate(-50%, -50%);
             box-shadow: 0 0 10px #00ff41;
             opacity: 0;
@@ -98,51 +103,73 @@
             100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
         }
         
+        /* Target Lock Corners */
+        .target-corner {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-color: #00ff41;
+            border-style: solid;
+            transition: all 0.3s ease;
+            opacity: 0;
+        }
+        .group:hover .target-corner {
+            opacity: 1;
+            width: 20px;
+            height: 20px;
+        }
+        .tl { top: 0; left: 0; border-width: 2px 0 0 2px; }
+        .tr { top: 0; right: 0; border-width: 2px 2px 0 0; }
+        .bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+        .br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+        .lock-status {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+        .group:hover .lock-status {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #1a1a1a; border: 1px solid #00ff41; }
-        
-        .deal-card {
-            transition: all 0.3s ease;
-        }
-        .deal-card:hover {
-            border-color: #00ff41;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.1);
-        }
-        
-        .hot-deal {
+
+        /* New code highlight - pulsing red/orange border */
+        .new-code-highlight {
+            animation: newCodePulse 1s ease-in-out infinite;
             border-color: #ff3333 !important;
         }
-        .hot-deal:hover {
-            box-shadow: 0 0 20px rgba(255, 51, 51, 0.2);
+
+        @keyframes newCodePulse {
+            0%, 100% { 
+                box-shadow: 0 0 20px rgba(255, 51, 51, 0.4);
+                border-color: #ff3333;
+            }
+            50% { 
+                box-shadow: 0 0 40px rgba(255, 149, 0, 0.6);
+                border-color: #ff9500;
+            }
         }
-        
+
+        /* Code copy button */
         .code-copy {
             cursor: pointer;
             transition: all 0.2s;
         }
         .code-copy:hover {
             background: #00ff41;
-            color: #000;
+            color: black;
         }
         .code-copy.copied {
             background: #00ff41;
-            color: #000;
+            color: black;
         }
 
-        .filter-btn.active {
-            background: rgba(0, 255, 65, 0.1);
-            color: #00ff41;
-            border-left-color: #00ff41;
-            border-left-width: 2px;
-        }
-
-        .tab-btn.active {
-            background: rgba(0, 255, 65, 0.1);
-            color: #00ff41;
-            border-bottom: 2px solid #00ff41;
-        }
-
+        /* Scanning state */
         .scanning .radar-sweep {
             animation-duration: 1s;
         }
@@ -157,7 +184,7 @@
     <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden" id="radar-icon">
+                <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden">
                     <div class="absolute inset-0 radar-sweep animate-spin-slow"></div>
                     <i class="fas fa-crosshairs text-radar-green relative z-10 text-sm"></i>
                 </div>
@@ -165,25 +192,26 @@
                     <h1 class="font-loud text-3xl font-bold tracking-widest leading-none text-white uppercase glitch-text cursor-default">
                         SKRATCH<span class="text-radar-green">RADAR</span>
                     </h1>
-                    <div class="text-[10px] text-radar-green tracking-[0.3em] uppercase opacity-80">
-                        Live Discount Intel
+                    <div class="text-[10px] text-radar-green tracking-[0.3em] uppercase opacity-80 flex items-center gap-2">
+                        <span id="feed-status">LIVE INTEL</span>
+                        <span class="w-1 h-1 bg-radar-green rounded-full animate-pulse"></span>
                     </div>
                 </div>
             </div>
 
-            <div class="flex items-center gap-4">
-                <!-- Last Updated -->
-                <div class="hidden sm:block text-right">
-                    <div class="text-[10px] text-gray-500 uppercase">Last Scan</div>
-                    <div class="text-xs text-radar-green" id="last-updated">--:--</div>
+            <div class="flex items-center gap-6">
+                <!-- Zulu Time Clock -->
+                <div class="hidden md:block text-right">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Zulu Time</div>
+                    <div id="zulu-clock" class="text-white font-mono text-lg leading-none">00:00:00</div>
                 </div>
-                
+
                 <!-- Refresh Button -->
-                <button onclick="refreshScan()" id="scan-btn" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
                     <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
                     <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
-                        <i class="fas fa-satellite-dish" id="scan-icon"></i>
-                        <span id="scan-text">Scan</span>
+                        <i class="fas fa-sync-alt" id="scan-icon"></i>
+                        Scan
                     </span>
                 </button>
             </div>
@@ -197,12 +225,12 @@
         <aside class="lg:col-span-4 flex flex-col gap-6">
             
             <!-- Radar Visualization Panel -->
-            <div class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
+            <div id="radar-panel" class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
                 <div class="absolute top-2 left-2 text-xs text-radar-greenDim">SYS.MONITORING</div>
-                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast" id="live-indicator">● LIVE</div>
+                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE</div>
                 
                 <!-- The Radar Circle -->
-                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(0,255,65,0.1)]" id="radar-visual">
+                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(0,255,65,0.1)]" id="radar-circle">
                     <!-- Grid Rings -->
                     <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75"></div>
                     <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50"></div>
@@ -215,12 +243,24 @@
                     <!-- The Sweep -->
                     <div class="absolute inset-0 radar-sweep animate-spin-slow origin-center"></div>
                     
-                    <!-- Blips (dynamically positioned) -->
+                    <!-- Dynamic Blips Container -->
                     <div id="blips-container"></div>
                 </div>
 
                 <div class="text-center font-loud text-2xl tracking-widest text-radar-green mt-2">
                     <span id="target-count">000</span> TARGETS ACQUIRED
+                </div>
+
+                <!-- Legend -->
+                <div class="mt-4 pt-3 border-t border-radar-grid text-[10px] text-gray-600 space-y-1">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 border border-radar-green bg-radar-green/20"></span>
+                        <span>GREEN FLASH = Has active promo code</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 border border-radar-red bg-radar-red/20 animate-pulse"></span>
+                        <span>RED PULSE = New code just detected</span>
+                    </div>
                 </div>
             </div>
 
@@ -241,107 +281,108 @@
             </div>
 
             <!-- Search -->
-            <div class="bg-radar-dark border border-radar-grid p-4 rounded-sm">
-                <div class="relative">
-                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-600"></i>
-                    <input type="text" id="search-input" placeholder="Search brands, codes..." 
-                        class="w-full bg-radar-black border border-radar-grid pl-10 pr-4 py-2 text-white placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors">
-                </div>
+            <div class="relative">
+                <input type="text" id="search-input" placeholder="SEARCH TARGETS..." 
+                    class="w-full bg-radar-dark border border-radar-grid px-4 py-3 text-white placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors"
+                    oninput="handleSearch(this.value)">
+                <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-gray-600"></i>
             </div>
 
             <!-- Categories -->
             <div class="bg-radar-dark border border-radar-grid p-4 rounded-sm">
                 <h3 class="font-loud text-xl text-white mb-4 border-b border-radar-grid pb-2">FILTER PROTOCOL</h3>
-                <div class="space-y-1" id="filter-buttons">
-                    <button data-filter="all" class="filter-btn active w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                <div class="space-y-2" id="filter-buttons">
+                    <button data-filter="all" class="filter-btn w-full text-left px-4 py-2 bg-radar-green/10 text-radar-green border-l-2 border-radar-green hover:bg-radar-green/20 transition-all font-bold">
                         <i class="fas fa-globe-americas w-6"></i> ALL SECTORS
                     </button>
-                    <button data-filter="apparel" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                    <button data-filter="apparel" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
                         <i class="fas fa-tshirt w-6"></i> APPAREL
                     </button>
-                    <button data-filter="footwear" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                    <button data-filter="footwear" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
                         <i class="fas fa-shoe-prints w-6"></i> FOOTWEAR
                     </button>
-                    <button data-filter="bags" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
-                        <i class="fas fa-shopping-bag w-6"></i> BAGS & ACCESSORIES
+                    <button data-filter="retailer" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-shopping-bag w-6"></i> RETAILERS
                     </button>
-                    <button data-filter="oem" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
-                        <i class="fas fa-golf-ball w-6"></i> OEM / EQUIPMENT
+                    <button data-filter="oem" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-golf-ball w-6"></i> OEM HARDWARE
                     </button>
-                    <button data-filter="retailer" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
-                        <i class="fas fa-store w-6"></i> RETAILERS
+                    <button data-filter="bags" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-suitcase w-6"></i> BAGS & ACCESSORIES
                     </button>
-                    <button data-filter="womens" class="filter-btn w-full text-left px-4 py-2 text-gray-400 border-l-2 border-transparent hover:bg-radar-green/5 hover:text-white transition-all">
+                    <button data-filter="womens" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
                         <i class="fas fa-venus w-6"></i> WOMEN'S
                     </button>
                 </div>
+            </div>
+
+            <!-- System Log -->
+            <div class="font-mono text-[10px] text-gray-600 space-y-1 h-32 overflow-hidden border-t border-radar-grid pt-2 opacity-50" id="system-log">
+                <div>> INITIATING SEQUENCE... OK</div>
+                <div>> CONNECTING TO SERVER... OK</div>
+                <div>> AWAITING DATA STREAM...</div>
             </div>
         </aside>
 
         <!-- Right Column: Deal Feed -->
         <section class="lg:col-span-8 flex flex-col gap-4">
             
-            <!-- Tabs -->
-            <div class="flex gap-1 border-b border-radar-grid">
-                <button data-tab="promos" class="tab-btn active px-6 py-3 font-loud text-xl text-gray-500 hover:text-white transition-colors uppercase tracking-wider">
-                    Promos
-                </button>
-                <button data-tab="codes" class="tab-btn px-6 py-3 font-loud text-xl text-gray-500 hover:text-white transition-colors uppercase tracking-wider">
-                    Codes
-                </button>
-                <button data-tab="email" class="tab-btn px-6 py-3 font-loud text-xl text-gray-500 hover:text-white transition-colors uppercase tracking-wider">
-                    Email Offers
-                </button>
-            </div>
-
             <!-- Feed Header -->
-            <div class="flex justify-between items-end pb-2">
-                <h2 class="font-loud text-3xl text-white" id="feed-title">INCOMING TRANSMISSIONS</h2>
-                <span class="text-xs text-radar-green animate-pulse" id="feed-status">SCANNING...</span>
-            </div>
-
-            <!-- Content Container -->
-            <div id="content-container">
-                <!-- Promos Tab -->
-                <div id="promos-tab" class="tab-content">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
-                        <!-- Loading state -->
-                        <div class="col-span-full text-center py-12 text-gray-500">
-                            <i class="fas fa-satellite-dish text-4xl mb-4 animate-pulse"></i>
-                            <div class="font-loud text-xl">ACQUIRING TARGETS...</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Codes Tab -->
-                <div id="codes-tab" class="tab-content hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="codes-grid">
-                    </div>
-                </div>
-                
-                <!-- Email Tab -->
-                <div id="email-tab" class="tab-content hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="email-grid">
-                    </div>
+            <div class="flex justify-between items-end border-b-2 border-radar-green pb-2 mb-2">
+                <h2 class="font-loud text-4xl text-white">INCOMING TRANSMISSIONS</h2>
+                <div class="flex gap-4 items-center">
+                    <span class="text-xs text-radar-green animate-pulse" id="last-update">AWAITING SIGNAL...</span>
                 </div>
             </div>
 
-            <!-- Scanner Line -->
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-2">
+                <button onclick="switchTab('promos')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-radar-green text-radar-green" data-tab="promos">
+                    PROMOS
+                </button>
+                <button onclick="switchTab('codes')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="codes">
+                    CODES
+                </button>
+                <button onclick="switchTab('email')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="email">
+                    EMAIL OFFERS
+                </button>
+            </div>
+
+            <!-- Featured Deal (Hot) - Will be populated dynamically -->
+            <div id="featured-deal" class="hidden"></div>
+
+            <!-- Deals Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
+                <!-- Loading state -->
+                <div class="col-span-2 text-center py-20 text-gray-600">
+                    <i class="fas fa-satellite-dish text-4xl mb-4 animate-pulse"></i>
+                    <div class="font-loud text-2xl">SCANNING FREQUENCIES...</div>
+                </div>
+            </div>
+
+            <!-- Loader / Scanner Line -->
             <div class="w-full h-1 bg-gray-900 mt-4 overflow-hidden rounded-full">
-                <div class="h-full bg-radar-green w-1/3 animate-[scan_2s_ease-in-out_infinite]" id="scan-line"></div>
+                <div class="h-full bg-radar-green w-1/3 animate-[scan_2s_ease-in-out_infinite]"></div>
             </div>
 
         </section>
     </main>
 
+    <!-- Intel Marquee -->
+    <div class="bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black relative z-20">
+        <div class="inline-block animate-marquee" id="marquee-text">
+            SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+        </div>
+    </div>
+
     <!-- Footer -->
-    <footer class="border-t border-radar-grid bg-radar-black py-8 mt-auto relative z-10">
+    <footer class="bg-radar-black py-8 relative z-10">
         <div class="container mx-auto px-4 text-center">
             <div class="font-loud text-2xl text-white mb-2 tracking-widest">
-                SKRATCH <span class="text-radar-green">RADAR</span>
+                GOLF PROMO <span class="text-radar-green">RADAR</span>
             </div>
             <p class="text-gray-600 text-xs font-mono uppercase tracking-widest">
-                Scanning <span id="brand-count">0</span> Brands • Auto-Refresh Every 5 Min • Built for Skratch Golf
+                Scanning 170+ Brand Homepages • Auto-Updating Every 5 Mins • Skratch Golf Aesthetics
             </p>
         </div>
     </footer>
@@ -356,29 +397,58 @@
         let searchQuery = '';
 
         // =================================================================
-        // ICONS BY CATEGORY
+        // ZULU CLOCK
         // =================================================================
-        const categoryIcons = {
-            apparel: 'fa-tshirt',
-            footwear: 'fa-shoe-prints',
-            bags: 'fa-shopping-bag',
-            accessories: 'fa-hat-wizard',
-            oem: 'fa-golf-ball',
-            retailer: 'fa-store',
-            default: 'fa-tag'
-        };
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toISOString().substr(11, 8);
+            document.getElementById('zulu-clock').innerText = timeString;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // =================================================================
+        // SYSTEM LOG
+        // =================================================================
+        function log(message) {
+            const logEl = document.getElementById('system-log');
+            const entry = document.createElement('div');
+            entry.textContent = `> ${message}`;
+            entry.className = message.includes('ERROR') ? 'text-radar-red' : 
+                             message.includes('OK') || message.includes('FOUND') ? 'text-radar-green' : '';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
 
         // =================================================================
         // FETCH DATA
         // =================================================================
         async function fetchData() {
             try {
+                log('FETCHING BRAND DATA...');
                 const response = await fetch('/api/promos');
-                promoData = await response.json();
+                const data = await response.json();
+                promoData = data;
+                
+                log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
+                log(`CODES EXTRACTED: ${data.codes?.length || 0}`);
+                log(`EMAIL OFFERS: ${data.emailOffers?.length || 0}`);
+                
                 updateUI();
                 updateBlips();
+                updateMarquee();
+                
+                document.getElementById('feed-status').textContent = 'LIVE INTEL';
+                document.getElementById('feed-status').classList.remove('text-radar-red');
+                document.getElementById('feed-status').classList.add('text-radar-green');
+                
+                if (data.lastUpdated) {
+                    const date = new Date(data.lastUpdated);
+                    document.getElementById('last-update').textContent = `UPDATED ${date.toLocaleTimeString()}`;
+                }
             } catch (error) {
                 console.error('Failed to fetch:', error);
+                log('ERROR: SIGNAL LOST');
                 document.getElementById('feed-status').textContent = 'CONNECTION ERROR';
                 document.getElementById('feed-status').classList.remove('text-radar-green');
                 document.getElementById('feed-status').classList.add('text-radar-red');
@@ -390,181 +460,230 @@
         // =================================================================
         function updateUI() {
             // Stats
-            document.getElementById('stat-promos').textContent = promoData.promos?.length || 0;
-            document.getElementById('stat-codes').textContent = promoData.codes?.length || 0;
-            document.getElementById('stat-email').textContent = promoData.emailOffers?.length || 0;
-            document.getElementById('target-count').textContent = String(promoData.promos?.length || 0).padStart(3, '0');
-            document.getElementById('brand-count').textContent = promoData.promos?.length || 0;
-
-            // Last updated
-            if (promoData.lastUpdated) {
-                const date = new Date(promoData.lastUpdated);
-                document.getElementById('last-updated').textContent = date.toLocaleTimeString();
-            }
-
-            document.getElementById('feed-status').textContent = 'LIVE FEED';
-            document.getElementById('feed-status').classList.remove('text-radar-red');
-            document.getElementById('feed-status').classList.add('text-radar-green');
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            const codes = promoData.codes || [];
+            const emails = promoData.emailOffers || [];
             
-            renderCurrentTab();
-        }
+            document.getElementById('stat-promos').textContent = promos.length;
+            document.getElementById('stat-codes').textContent = codes.length;
+            document.getElementById('stat-email').textContent = emails.length;
+            document.getElementById('target-count').textContent = promos.length.toString().padStart(3, '0');
 
-        // =================================================================
-        // RENDER TABS
-        // =================================================================
-        function renderCurrentTab() {
+            // Render current tab
             if (currentTab === 'promos') renderPromos();
             else if (currentTab === 'codes') renderCodes();
-            else if (currentTab === 'email') renderEmailOffers();
+            else if (currentTab === 'email') renderEmail();
         }
 
+        // =================================================================
+        // RENDER PROMOS
+        // =================================================================
         function renderPromos() {
             const grid = document.getElementById('deals-grid');
-            let promos = promoData.promos || [];
+            const featured = document.getElementById('featured-deal');
+            
+            let promos = promoData.promos?.filter(p => p.promo) || [];
             
             // Filter
             if (currentFilter !== 'all') {
-                if (currentFilter === 'womens') {
-                    promos = promos.filter(p => p.tags?.includes('womens'));
-                } else if (currentFilter === 'bags') {
-                    promos = promos.filter(p => p.category === 'bags' || p.category === 'accessories' || p.tags?.includes('bags'));
-                } else {
-                    promos = promos.filter(p => p.category === currentFilter || p.tags?.includes(currentFilter));
-                }
+                promos = promos.filter(p => p.category === currentFilter || p.tags?.includes(currentFilter));
             }
             
             // Search
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
                 promos = promos.filter(p => 
-                    p.brand?.toLowerCase().includes(q) || 
+                    p.brand?.toLowerCase().includes(q) ||
                     p.promo?.toLowerCase().includes(q) ||
                     p.code?.toLowerCase().includes(q) ||
                     p.tags?.some(t => t.toLowerCase().includes(q))
                 );
             }
 
+            // Sort by discount percentage
+            promos.sort((a, b) => {
+                const getDiscount = (p) => {
+                    const match = p.promo?.match(/(\d+)%/);
+                    return match ? parseInt(match[1]) : 0;
+                };
+                return getDiscount(b) - getDiscount(a);
+            });
+
+            // Featured (highest discount)
+            if (promos.length > 0 && !searchQuery) {
+                const top = promos[0];
+                const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
+                
+                if (discount >= 40) {
+                    featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
+                    featured.innerHTML = `
+                        <div class="target-corner tl border-radar-red"></div>
+                        <div class="target-corner tr border-radar-red"></div>
+                        <div class="target-corner bl border-radar-red"></div>
+                        <div class="target-corner br border-radar-red"></div>
+                        <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
+                        <div class="absolute inset-0 bg-gradient-to-r from-radar-red/10 to-transparent opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                        <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
+                            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shrink-0 border-4 border-radar-black">
+                                <i class="fas fa-fire text-3xl text-radar-red"></i>
+                            </div>
+                            <div class="flex-grow">
+                                <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
+                                <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${discount}% OFF</span>
+                                    ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
+                                </div>
+                            </div>
+                            <a href="${top.url}" target="_blank" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
+                                ACCESS
+                            </a>
+                        </div>
+                    `;
+                    promos = promos.slice(1);
+                } else {
+                    featured.className = 'hidden';
+                    featured.innerHTML = '';
+                }
+            } else {
+                featured.className = 'hidden';
+                featured.innerHTML = '';
+            }
+
+            // Grid
             if (promos.length === 0) {
                 grid.innerHTML = `
-                    <div class="col-span-full text-center py-12 text-gray-500">
-                        <i class="fas fa-satellite text-4xl mb-4"></i>
-                        <div class="font-loud text-xl">NO TARGETS IN SECTOR</div>
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-radar text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO SIGNALS DETECTED</div>
                         <div class="text-sm mt-2">Try adjusting your filters</div>
                     </div>
                 `;
                 return;
             }
 
-            // Sort: hot deals first (50%+ off)
-            promos.sort((a, b) => {
-                const aDiscount = extractDiscount(a.promo);
-                const bDiscount = extractDiscount(b.promo);
-                return bDiscount - aDiscount;
-            });
-
-            grid.innerHTML = promos.map((promo, idx) => {
-                const discount = extractDiscount(promo.promo);
-                const isHot = discount >= 40;
-                const isCritical = discount >= 50;
-                const icon = categoryIcons[promo.category] || categoryIcons.default;
+            grid.innerHTML = promos.map(p => {
+                const discount = p.promo?.match(/(\d+)%/)?.[1] || 0;
+                const isHot = discount >= 30;
+                const icon = getCategoryIcon(p.category);
                 
                 return `
-                    <div class="deal-card bg-radar-dark border ${isCritical ? 'border-radar-red hot-deal' : 'border-radar-grid'} p-5 relative group">
-                        ${isCritical ? '<div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-2 py-0.5 text-sm">🔥 CRITICAL</div>' : ''}
-                        ${isHot && !isCritical ? '<div class="absolute top-0 right-0 bg-radar-orange text-black font-loud px-2 py-0.5 text-sm">HOT</div>' : ''}
+                    <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 cursor-crosshair overflow-hidden ${isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
                         
-                        <div class="flex justify-between items-start mb-3">
+                        <div class="flex justify-between items-start mb-4 relative z-10">
                             <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center shrink-0">
+                                <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center">
                                     <i class="fas ${icon} text-black"></i>
                                 </div>
-                                <div class="min-w-0">
-                                    <h4 class="font-loud text-2xl text-white leading-none truncate">${promo.brand}</h4>
-                                    <span class="text-xs text-gray-500">${promo.category?.toUpperCase() || 'APPAREL'}</span>
+                                <div>
+                                    <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
+                                    <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}</span>
                                 </div>
                             </div>
+                            ${isHot ? '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>' : ''}
                         </div>
                         
-                        <p class="text-gray-400 text-sm mb-4 line-clamp-2">${promo.promo}</p>
+                        <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
                         
-                        <div class="flex flex-wrap gap-2 mb-3">
-                            ${promo.code ? `
-                                <span class="code-copy px-2 py-1 bg-gray-800 text-radar-green border border-radar-green/50 text-xs font-bold uppercase" 
-                                      onclick="copyCode('${promo.code}', this)">
-                                    <i class="fas fa-copy mr-1"></i>${promo.code}
-                                </span>
-                            ` : ''}
-                            ${discount > 0 ? `<span class="px-2 py-1 bg-radar-green/20 text-radar-green border border-radar-green/50 text-xs font-bold">${discount}% OFF</span>` : ''}
-                        </div>
-                        
-                        <div class="flex justify-between items-center border-t border-gray-800 pt-3">
-                            <div class="flex gap-1 overflow-hidden">
-                                ${(promo.tags || []).slice(0, 2).map(tag => `
-                                    <span class="text-[10px] text-gray-600 uppercase">#${tag}</span>
-                                `).join('')}
-                            </div>
-                            <a href="${promo.url}" target="_blank" rel="noopener" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform shrink-0">
-                                Access <i class="fas fa-chevron-right text-xs"></i>
+                        <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
+                            ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-mono" onclick="copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
+                            <a href="${p.url}" target="_blank" class="text-white hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                View <i class="fas fa-chevron-right text-xs"></i>
                             </a>
+                        </div>
+                        
+                        <div class="lock-status absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span class="text-radar-green/10 text-4xl font-loud tracking-widest uppercase transform -rotate-12 group-hover:text-radar-green/20">TARGET LOCKED</span>
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
+        // =================================================================
+        // RENDER CODES
+        // =================================================================
         function renderCodes() {
-            const grid = document.getElementById('codes-grid');
-            const codes = promoData.codes || [];
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let codes = promoData.codes || [];
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                codes = codes.filter(c => 
+                    c.brand?.toLowerCase().includes(q) ||
+                    c.code?.toLowerCase().includes(q)
+                );
+            }
 
             if (codes.length === 0) {
                 grid.innerHTML = `
-                    <div class="col-span-full text-center py-12 text-gray-500">
+                    <div class="col-span-2 text-center py-20 text-gray-600">
                         <i class="fas fa-key text-4xl mb-4"></i>
-                        <div class="font-loud text-xl">NO ACTIVE CODES DETECTED</div>
+                        <div class="font-loud text-2xl">NO CODES INTERCEPTED</div>
                     </div>
                 `;
                 return;
             }
 
-            grid.innerHTML = codes.map(code => `
-                <div class="bg-radar-dark border border-radar-grid p-4 hover:border-radar-green transition-colors">
-                    <div class="font-loud text-xl text-white mb-2 truncate">${code.brand}</div>
-                    <div class="code-copy bg-radar-black border border-radar-green px-4 py-3 text-center cursor-pointer hover:bg-radar-green hover:text-black transition-all"
-                         onclick="copyCode('${code.code}', this)">
-                        <i class="fas fa-copy mr-2"></i>
-                        <span class="font-bold text-lg tracking-widest">${code.code}</span>
+            grid.innerHTML = codes.map(c => `
+                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h4 class="font-loud text-xl text-white">${c.brand}</h4>
+                            <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}</p>
+                        </div>
+                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-mono text-lg" onclick="copyCode('${c.code}', this)">
+                            ${c.code}
+                        </div>
                     </div>
-                    <div class="text-sm text-gray-500 mt-2 truncate">${code.discount || ''}</div>
                 </div>
             `).join('');
         }
 
-        function renderEmailOffers() {
-            const grid = document.getElementById('email-grid');
-            const offers = promoData.emailOffers || [];
+        // =================================================================
+        // RENDER EMAIL OFFERS
+        // =================================================================
+        function renderEmail() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let offers = promoData.emailOffers || [];
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                offers = offers.filter(o => 
+                    o.brand?.toLowerCase().includes(q) ||
+                    o.offer?.toLowerCase().includes(q)
+                );
+            }
 
             if (offers.length === 0) {
                 grid.innerHTML = `
-                    <div class="col-span-full text-center py-12 text-gray-500">
+                    <div class="col-span-2 text-center py-20 text-gray-600">
                         <i class="fas fa-envelope text-4xl mb-4"></i>
-                        <div class="font-loud text-xl">NO EMAIL OFFERS DETECTED</div>
+                        <div class="font-loud text-2xl">NO EMAIL OFFERS DETECTED</div>
                     </div>
                 `;
                 return;
             }
 
-            grid.innerHTML = offers.map(offer => `
-                <div class="bg-radar-dark border border-radar-grid p-5 hover:border-radar-green transition-colors">
-                    <div class="flex items-center gap-3 mb-3">
-                        <div class="w-10 h-10 bg-radar-green/20 rounded-full flex items-center justify-center shrink-0">
-                            <i class="fas fa-envelope text-radar-green"></i>
+            grid.innerHTML = offers.map(o => `
+                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 bg-radar-orange/20 rounded-full flex items-center justify-center">
+                            <i class="fas fa-envelope text-radar-orange"></i>
                         </div>
-                        <div class="min-w-0">
-                            <h4 class="font-loud text-xl text-white truncate">${offer.brand}</h4>
-                            <span class="text-xs text-gray-500">${offer.method || 'EMAIL SIGNUP'}</span>
+                        <div class="flex-grow">
+                            <h4 class="font-loud text-xl text-white">${o.brand}</h4>
+                            <p class="text-gray-400 text-sm">${o.offer}</p>
                         </div>
                     </div>
-                    <p class="text-gray-400 text-sm">${offer.offer}</p>
                 </div>
             `).join('');
         }
@@ -572,136 +691,274 @@
         // =================================================================
         // HELPERS
         // =================================================================
-        function extractDiscount(text) {
-            if (!text) return 0;
-            const match = text.match(/(\d+)%/);
-            return match ? parseInt(match[1]) : 0;
+        function getCategoryIcon(category) {
+            const icons = {
+                apparel: 'fa-tshirt',
+                footwear: 'fa-shoe-prints',
+                oem: 'fa-golf-ball',
+                retailer: 'fa-shopping-bag',
+                bags: 'fa-suitcase',
+                accessories: 'fa-hat-cowboy',
+                womens: 'fa-venus'
+            };
+            return icons[category] || 'fa-tag';
         }
 
-        function copyCode(code, element) {
+        function copyCode(code, el) {
             navigator.clipboard.writeText(code);
-            element.classList.add('copied');
-            const originalHTML = element.innerHTML;
-            element.innerHTML = '<i class="fas fa-check mr-1"></i>COPIED!';
+            el.classList.add('copied');
+            const original = el.innerHTML;
+            el.innerHTML = '<i class="fas fa-check"></i> COPIED';
             setTimeout(() => {
-                element.classList.remove('copied');
-                element.innerHTML = originalHTML;
+                el.classList.remove('copied');
+                el.innerHTML = original;
             }, 2000);
         }
 
-        function updateBlips() {
-            const container = document.getElementById('blips-container');
-            const count = Math.min(promoData.promos?.length || 0, 8);
-            
-            let blipsHTML = '';
-            for (let i = 0; i < count; i++) {
-                const top = 15 + Math.random() * 70;
-                const left = 15 + Math.random() * 70;
-                const delay = Math.random() * 4;
-                blipsHTML += `<div class="blip" style="top: ${top}%; left: ${left}%; animation-delay: ${delay}s; width: 6px; height: 6px;"></div>`;
-            }
-            container.innerHTML = blipsHTML;
+        function handleSearch(value) {
+            searchQuery = value;
+            updateUI();
         }
 
         // =================================================================
-        // REFRESH
+        // TABS
+        // =================================================================
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tab) {
+                    btn.classList.add('border-radar-green', 'text-radar-green');
+                    btn.classList.remove('border-transparent', 'text-gray-500');
+                } else {
+                    btn.classList.remove('border-radar-green', 'text-radar-green');
+                    btn.classList.add('border-transparent', 'text-gray-500');
+                }
+            });
+            updateUI();
+        }
+
+        // =================================================================
+        // FILTERS
+        // =================================================================
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentFilter = btn.dataset.filter;
+                
+                document.querySelectorAll('.filter-btn').forEach(b => {
+                    b.classList.remove('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
+                    b.classList.add('text-gray-400', 'border-transparent');
+                });
+                btn.classList.remove('text-gray-400', 'border-transparent');
+                btn.classList.add('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
+                
+                if (currentTab === 'promos') renderPromos();
+            });
+        });
+
+        // =================================================================
+        // RADAR BLIPS
+        // =================================================================
+        function updateBlips() {
+            const container = document.getElementById('blips-container');
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            
+            container.innerHTML = '';
+            
+            const numBlips = Math.min(promos.length, 12);
+            for (let i = 0; i < numBlips; i++) {
+                const blip = document.createElement('div');
+                blip.className = 'blip';
+                
+                // Random position in circle
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 20 + Math.random() * 70;
+                const x = 50 + Math.cos(angle) * radius * 0.4;
+                const y = 50 + Math.sin(angle) * radius * 0.4;
+                
+                blip.style.left = `${x}%`;
+                blip.style.top = `${y}%`;
+                blip.style.animationDelay = `${Math.random() * 4}s`;
+                
+                container.appendChild(blip);
+            }
+        }
+
+        // =================================================================
+        // MARQUEE
+        // =================================================================
+        function updateMarquee() {
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            if (promos.length === 0) return;
+            
+            const highlights = promos.slice(0, 10).map(p => 
+                `${p.brand.toUpperCase()}: ${p.promo.toUpperCase()}`
+            ).join(' ... ');
+            
+            document.getElementById('marquee-text').textContent = highlights + ' ... ';
+        }
+
+        // =================================================================
+        // REFRESH SCAN
         // =================================================================
         async function refreshScan() {
             const btn = document.getElementById('scan-btn');
             const icon = document.getElementById('scan-icon');
-            const text = document.getElementById('scan-text');
-            const radar = document.getElementById('radar-icon');
+            const panel = document.getElementById('radar-panel');
             
             btn.disabled = true;
             icon.classList.add('animate-spin');
-            text.textContent = 'Scanning...';
-            radar.classList.add('scanning');
-            document.getElementById('feed-status').textContent = 'SCANNING...';
-
+            panel.classList.add('scanning');
+            
+            log('INITIATING MANUAL SCAN...');
+            
             try {
                 await fetch('/api/refresh', { method: 'POST' });
+                log('SCAN TRIGGERED... AWAITING RESULTS');
                 
-                // Wait for scrape to complete
-                await new Promise(r => setTimeout(r, 3000));
-                await fetchData();
-                
-                showNotification('SCAN COMPLETE', 'success');
-            } catch (error) {
-                showNotification('SCAN FAILED', 'error');
+                // Wait and refetch
+                setTimeout(async () => {
+                    await fetchData();
+                    btn.disabled = false;
+                    icon.classList.remove('animate-spin');
+                    panel.classList.remove('scanning');
+                    
+                    // Toast
+                    const notification = document.createElement('div');
+                    notification.className = 'fixed bottom-20 right-4 bg-radar-green text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(0,255,65,0.4)] z-[60] transform translate-y-20 transition-transform duration-300 border-l-4 border-white';
+                    notification.innerHTML = '<i class="fas fa-check-circle"></i> SCAN COMPLETE';
+                    document.body.appendChild(notification);
+                    
+                    requestAnimationFrame(() => notification.classList.remove('translate-y-20'));
+                    setTimeout(() => {
+                        notification.classList.add('translate-y-20');
+                        setTimeout(() => notification.remove(), 300);
+                    }, 3000);
+                }, 3000);
+            } catch (err) {
+                log('ERROR: SCAN FAILED');
+                btn.disabled = false;
+                icon.classList.remove('animate-spin');
+                panel.classList.remove('scanning');
             }
-
-            btn.disabled = false;
-            icon.classList.remove('animate-spin');
-            text.textContent = 'Scan';
-            radar.classList.remove('scanning');
         }
 
-        function showNotification(message, type = 'success') {
-            const notification = document.createElement('div');
-            const bgColor = type === 'success' ? 'bg-radar-green' : 'bg-radar-red';
-            notification.className = `fixed bottom-4 right-4 ${bgColor} text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(0,255,65,0.4)] z-[100] transform translate-y-20 transition-transform duration-300`;
-            notification.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i> ${message}`;
-            document.body.appendChild(notification);
+        // =================================================================
+        // NEW CODE DETECTION
+        // =================================================================
+        function getSeenCodes() {
+            try {
+                return JSON.parse(localStorage.getItem('seenCodes') || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function saveSeenCodes(codes) {
+            localStorage.setItem('seenCodes', JSON.stringify(codes));
+        }
+
+        function checkForNewCodes(newCodes) {
+            const seenCodes = getSeenCodes();
+            const newOnes = newCodes.filter(c => !seenCodes.includes(c.code));
             
-            requestAnimationFrame(() => notification.classList.remove('translate-y-20'));
+            if (newOnes.length > 0 && seenCodes.length > 0) {
+                newOnes.forEach(code => {
+                    showNewCodeAlert(code);
+                    highlightNewCode(code.code);
+                });
+            }
+            
+            saveSeenCodes(newCodes.map(c => c.code));
+            return newOnes;
+        }
+
+        function showNewCodeAlert(code) {
+            const alert = document.createElement('div');
+            alert.className = 'fixed top-20 left-1/2 -translate-x-1/2 bg-radar-dark border-2 border-radar-red px-8 py-4 z-[100] transform -translate-y-20 opacity-0 transition-all duration-500';
+            alert.innerHTML = `
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 bg-radar-red/20 rounded-full flex items-center justify-center animate-pulse">
+                        <i class="fas fa-satellite-dish text-radar-red text-2xl"></i>
+                    </div>
+                    <div>
+                        <div class="text-radar-red font-loud text-xl tracking-widest animate-pulse">⚡ INCOMING TRANSMISSION</div>
+                        <div class="text-white font-loud text-2xl">${code.brand}</div>
+                        <div class="text-radar-green font-bold tracking-widest">${code.code}</div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(alert);
+            
+            requestAnimationFrame(() => {
+                alert.classList.remove('-translate-y-20', 'opacity-0');
+                alert.classList.add('translate-y-0', 'opacity-100');
+            });
+            
+            const flash = document.createElement('div');
+            flash.className = 'fixed inset-0 bg-radar-red/10 z-[99] pointer-events-none';
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 200);
+            
             setTimeout(() => {
-                notification.classList.add('translate-y-20');
-                setTimeout(() => notification.remove(), 300);
-            }, 3000);
+                alert.classList.add('-translate-y-20', 'opacity-0');
+                setTimeout(() => alert.remove(), 500);
+            }, 5000);
+        }
+
+        function highlightNewCode(code) {
+            setTimeout(() => {
+                const cards = document.querySelectorAll('.deal-card');
+                cards.forEach(card => {
+                    if (card.dataset.code === code) {
+                        card.classList.add('new-code-highlight');
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => card.classList.remove('new-code-highlight'), 10000);
+                    }
+                });
+            }, 500);
+        }
+
+        async function fetchDataWithCodeCheck() {
+            try {
+                const response = await fetch('/api/promos');
+                const newData = await response.json();
+                
+                if (newData.codes && newData.codes.length > 0) {
+                    checkForNewCodes(newData.codes);
+                }
+                
+                promoData = newData;
+                updateUI();
+                updateBlips();
+                updateMarquee();
+            } catch (error) {
+                console.error('Failed to fetch:', error);
+            }
         }
 
         // =================================================================
-        // EVENT LISTENERS
+        // GREEN FLASH = Cards WITH promo codes (most actionable)
         // =================================================================
-        // Filters
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentFilter = btn.dataset.filter;
-                renderCurrentTab();
-            });
-        });
-
-        // Tabs
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                
-                document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
-                document.getElementById(`${btn.dataset.tab}-tab`).classList.remove('hidden');
-                
-                currentTab = btn.dataset.tab;
-                renderCurrentTab();
-            });
-        });
-
-        // Search
-        document.getElementById('search-input').addEventListener('input', (e) => {
-            searchQuery = e.target.value;
-            renderCurrentTab();
-        });
+        setInterval(() => {
+            const cards = document.querySelectorAll('.deal-card');
+            const cardsWithCodes = Array.from(cards).filter(card => card.dataset.code);
+            
+            if (cardsWithCodes.length > 0) {
+                const randomCard = cardsWithCodes[Math.floor(Math.random() * cardsWithCodes.length)];
+                randomCard.style.borderColor = '#00ff41';
+                randomCard.style.boxShadow = '0 0 20px rgba(0, 255, 65, 0.3)';
+                setTimeout(() => {
+                    randomCard.style.borderColor = '';
+                    randomCard.style.boxShadow = '';
+                }, 300);
+            }
+        }, 3000);
 
         // =================================================================
         // INIT
         // =================================================================
         fetchData();
-        
-        // Auto-refresh every 5 minutes
-        setInterval(fetchData, 5 * 60 * 1000);
-        
-        // Subtle random grid glint effect
-        setInterval(() => {
-            const cards = document.querySelectorAll('.deal-card');
-            if (cards.length > 0) {
-                const randomCard = cards[Math.floor(Math.random() * cards.length)];
-                randomCard.style.borderColor = '#00ff41';
-                setTimeout(() => {
-                    randomCard.style.borderColor = '';
-                }, 200);
-            }
-        }, 4000);
+        setInterval(fetchDataWithCodeCheck, 5 * 60 * 1000);
     </script>
 </body>
 </html>
