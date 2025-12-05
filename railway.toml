@@ -1,8 +1,9 @@
-[build]
+toml[build]
 builder = "NIXPACKS"
+buildCommand = "pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium"
 
 [deploy]
-startCommand = "playwright install chromium && python server.py"
+startCommand = "python server.py"
 healthcheckPath = "/api/status"
 healthcheckTimeout = 300
 
