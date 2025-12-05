@@ -1,6 +1,5 @@
-toml[build]
+[build]
 builder = "NIXPACKS"
-buildCommand = "pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium"
 
 [deploy]
 startCommand = "python server.py"
