@@ -41,16 +41,11 @@
                         'ping-slow': 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite',
                         'scan': 'scan 4s linear infinite',
                         'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                        'marquee': 'marquee 30s linear infinite',
                     },
                     keyframes: {
                         scan: {
                             '0%': { transform: 'translateY(-100%)' },
                             '100%': { transform: 'translateY(100%)' }
-                        },
-                        marquee: {
-                            '0%': { transform: 'translateX(100%)' },
-                            '100%': { transform: 'translateX(-100%)' }
                         }
                     }
                 }
@@ -172,6 +167,16 @@
         /* Scanning state */
         .scanning .radar-sweep {
             animation-duration: 1s;
+        }
+
+        /* Marquee continuous scroll */
+        .marquee-track {
+            animation: marqueeScroll 20s linear infinite;
+        }
+
+        @keyframes marqueeScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
         }
     </style>
 </head>
@@ -370,8 +375,13 @@
 
     <!-- Intel Marquee -->
     <div class="bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black relative z-20">
-        <div class="inline-block animate-marquee" id="marquee-text">
-            SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+        <div class="marquee-track flex">
+            <div class="marquee-content flex-shrink-0 px-4" id="marquee-text">
+                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+            </div>
+            <div class="marquee-content flex-shrink-0 px-4" id="marquee-text-2">
+                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+            </div>
         </div>
     </div>
 
@@ -794,7 +804,9 @@
                 `${p.brand.toUpperCase()}: ${p.promo.toUpperCase()}`
             ).join(' ... ');
             
-            document.getElementById('marquee-text').textContent = highlights + ' ... ';
+            const text = highlights + ' ... ';
+            document.getElementById('marquee-text').textContent = text;
+            document.getElementById('marquee-text-2').textContent = text;
         }
 
         // =================================================================
