@@ -635,7 +635,7 @@
                 
                 if (discount >= 40) {
                     const linkUrl = top.affiliate_url || top.url;
-                    const hasImage = top.image && !top.image.includes('data:');
+                    const hasLogo = top.image && !top.image.includes('data:');
                     featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
                     featured.innerHTML = `
                         <div class="target-corner tl border-radar-red"></div>
@@ -643,18 +643,13 @@
                         <div class="target-corner bl border-radar-red"></div>
                         <div class="target-corner br border-radar-red"></div>
                         <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
-                        ${hasImage ? `<div class="absolute inset-0 z-0"><img src="${top.image}" alt="${top.brand}" class="w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity" onerror="this.parentElement.style.display='none'"></div>` : ''}
-                        <div class="absolute inset-0 bg-gradient-to-r from-radar-dark via-radar-dark/90 to-transparent z-[1]"></div>
                         <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-                            ${hasImage ? `
-                            <div class="w-20 h-20 bg-white rounded overflow-hidden shrink-0 border-2 border-radar-red shadow-lg">
-                                <img src="${top.image}" alt="${top.brand}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red flex items-center justify-center h-full\\'></i>'">
+                            <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
+                                ${hasLogo 
+                                    ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
+                                    : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
+                                }
                             </div>
-                            ` : `
-                            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shrink-0 border-4 border-radar-black">
-                                <i class="fas fa-fire text-3xl text-radar-red"></i>
-                            </div>
-                            `}
                             <div class="flex-grow">
                                 <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
                                 <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
@@ -695,7 +690,7 @@
                 const isHot = discount >= 30;
                 const icon = getCategoryIcon(p.category);
                 const linkUrl = p.affiliate_url || p.url;
-                const hasImage = p.image && !p.image.includes('data:');
+                const hasLogo = p.image && !p.image.includes('data:');
                 
                 return `
                     <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
@@ -704,26 +699,21 @@
                         <div class="target-corner bl"></div>
                         <div class="target-corner br"></div>
                         
-                        ${hasImage ? `
-                        <div class="h-32 overflow-hidden relative">
-                            <img src="${p.image}" alt="${p.brand}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" onerror="this.parentElement.style.display='none'">
-                            <div class="absolute inset-0 bg-gradient-to-t from-radar-dark via-transparent to-transparent"></div>
-                            ${isHot ? '<span class="absolute top-2 right-2 text-radar-orange text-xs border border-radar-orange px-1 bg-black/50">HOT</span>' : ''}
-                        </div>
-                        ` : ''}
-                        
                         <div class="p-5">
                             <div class="flex justify-between items-start mb-4 relative z-10">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 bg-gray-200 rounded-sm flex items-center justify-center flex-shrink-0">
-                                        <i class="fas ${icon} text-black"></i>
+                                    <div class="w-10 h-10 bg-white rounded-sm flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                        ${hasLogo 
+                                            ? `<img src="${p.image}" alt="${p.brand}" class="w-full h-full object-contain p-1" onerror="this.parentElement.innerHTML='<i class=\\'fas ${icon} text-black\\'></i>'">`
+                                            : `<i class="fas ${icon} text-black"></i>`
+                                        }
                                     </div>
                                     <div>
                                         <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
                                         <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}</span>
                                     </div>
                                 </div>
-                                ${!hasImage && isHot ? '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>' : ''}
+                                ${isHot ? '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>' : ''}
                             </div>
                             
                             <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
