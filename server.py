@@ -552,7 +552,94 @@ def scrape_brand(brand):
         # Extract hero/product image BEFORE decomposing elements
         result["image"] = extract_image(soup, brand["url"])
         
-        # Remove script/style/nav elements
+        # =================================================================
+        # CHECK FOR EMAIL SIGNUP OFFERS BEFORE REMOVING FOOTER
+        # =================================================================
+        email_selectors = [
+            # Footer newsletter sections
+            'footer [class*="newsletter"]',
+            'footer [class*="signup"]',
+            'footer [class*="subscribe"]',
+            'footer [class*="email"]',
+            '[class*="footer"] [class*="newsletter"]',
+            '[class*="footer"] [class*="signup"]',
+            
+            # Popup/modal selectors (often contain email offers)
+            '[class*="popup"]',
+            '[class*="modal"]',
+            '[class*="klaviyo"]',  # Popular email popup tool
+            '[class*="privy"]',    # Another popular one
+            '[class*="justuno"]',
+            '[class*="optinmonster"]',
+            '[class*="wheelio"]',
+            '[class*="spin"]',     # Spin-to-win popups
+            
+            # General newsletter/signup areas
+            '[class*="newsletter"]',
+            '[class*="signup"]',
+            '[class*="subscribe"]',
+            '[class*="email-capture"]',
+            '[class*="email-signup"]',
+            '[class*="join"]',
+            '[id*="newsletter"]',
+            '[id*="signup"]',
+            '[id*="subscribe"]',
+            
+            # Form areas that might have offers
+            'form[action*="subscribe"]',
+            'form[action*="newsletter"]',
+            'form[class*="email"]',
+        ]
+        
+        for selector in email_selectors:
+            if result.get("email_offer"):
+                break
+            try:
+                elements = soup.select(selector)[:3]
+                for el in elements:
+                    text = el.get_text(separator=' ', strip=True)
+                    if text and len(text) > 10:
+                        text_lower = text.lower()
+                        # Look for email offer patterns
+                        if any(word in text_lower for word in ['%', 'off', 'discount', 'save', 'free shipping']):
+                            if any(word in text_lower for word in ['sign', 'join', 'subscribe', 'email', 'newsletter', 'first order', 'welcome']):
+                                # Extract the offer
+                                patterns = [
+                                    r'(\d+%\s*off[^.!]*)',
+                                    r'(save\s*\d+%[^.!]*)',
+                                    r'(\d+%\s*(?:discount|savings)[^.!]*)',
+                                    r'(get\s*\d+%[^.!]*)',
+                                    r'(free shipping[^.!]*)',
+                                    r'(\$\d+\s*off[^.!]*)',
+                                ]
+                                for pattern in patterns:
+                                    match = re.search(pattern, text, re.IGNORECASE)
+                                    if match:
+                                        offer = match.group(1).strip()
+                                        if 10 < len(offer) < 100:
+                                            result["email_offer"] = clean_text(offer, 80)
+                                            break
+                                if result.get("email_offer"):
+                                    break
+            except:
+                pass
+        
+        # Also check meta tags and JSON-LD for promo info
+        try:
+            # Some sites put promo info in meta description
+            meta_desc = soup.find('meta', attrs={'name': 'description'})
+            if meta_desc and meta_desc.get('content'):
+                desc = meta_desc['content']
+                if re.search(r'sign.{0,10}up.{0,20}\d+%', desc, re.IGNORECASE):
+                    match = re.search(r'(\d+%\s*off[^.]*)', desc, re.IGNORECASE)
+                    if match and not result.get("email_offer"):
+                        result["email_offer"] = clean_text(match.group(1), 80)
+        except:
+            pass
+        
+        # =================================================================
+        # NOW REMOVE SCRIPT/STYLE/NAV/FOOTER FOR MAIN PROMO SCANNING
+        # =================================================================
         for element in soup(['script', 'style', 'noscript', 'nav', 'footer']):
             element.decompose()
         
@@ -654,25 +741,22 @@ def scrape_brand(brand):
                 if code:
                     result["code"] = code
         
-        # Check for email signup offers (separate from main promo)
-        email_selectors = ['[class*="newsletter"]', '[class*="signup"]', '[class*="subscribe"]', '[class*="email-capture"]']
-        for selector in email_selectors:
-            try:
-                elements = soup.select(selector)[:2]
-                for el in elements:
-                    text = el.get_text(separator=' ', strip=True)
-                    if text:
-                        for pattern in EMAIL_PATTERNS:
-                            if re.search(pattern, text.lower()):
-                                # Extract just the offer part
-                                match = re.search(r'(\d+%[^.]*(?:off|discount|order)[^.]*)', text, re.IGNORECASE)
-                                if match:
-                                    result["email_offer"] = clean_text(match.group(1), 80)
-                                    break
-                if result["email_offer"]:
-                    break
-            except:
-                pass
+        # Fallback: Check remaining body for email offers if not found yet
+        if not result.get("email_offer"):
+            for selector in ['[class*="newsletter"]', '[class*="signup"]', '[class*="subscribe"]']:
+                try:
+                    elements = soup.select(selector)[:2]
+                    for el in elements:
+                        text = el.get_text(separator=' ', strip=True)
+                        if text and '%' in text:
+                            match = re.search(r'(\d+%\s*off[^.!]*)', text, re.IGNORECASE)
+                            if match:
+                                result["email_offer"] = clean_text(match.group(1), 80)
+                                break
+                    if result.get("email_offer"):
+                        break
+                except:
+                    pass
                 
     except requests.exceptions.Timeout:
         result["error"] = "timeout"
