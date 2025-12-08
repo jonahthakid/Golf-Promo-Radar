@@ -371,6 +371,9 @@
                 <button onclick="switchTab('codes')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="codes">
                     CODES
                 </button>
+                <button onclick="switchTab('clearance')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="clearance">
+                    CLEARANCE
+                </button>
                 <button onclick="switchTab('email')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="email">
                     EMAIL OFFERS
                 </button>
@@ -510,7 +513,7 @@
         // =================================================================
         // STATE
         // =================================================================
-        let promoData = { promos: [], codes: [], emailOffers: [] };
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [] };
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -551,6 +554,7 @@
                 
                 log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
                 log(`CODES EXTRACTED: ${data.codes?.length || 0}`);
+                log(`CLEARANCE ITEMS: ${data.clearance?.length || 0}`);
                 log(`EMAIL OFFERS: ${data.emailOffers?.length || 0}`);
                 
                 updateUI();
@@ -582,6 +586,7 @@
             const promos = promoData.promos?.filter(p => p.promo) || [];
             const codes = promoData.codes || [];
             const emails = promoData.emailOffers || [];
+            const clearance = promoData.clearance || [];
             
             document.getElementById('stat-promos').textContent = promos.length;
             document.getElementById('stat-codes').textContent = codes.length;
@@ -591,6 +596,7 @@
             // Render current tab
             if (currentTab === 'promos') renderPromos();
             else if (currentTab === 'codes') renderCodes();
+            else if (currentTab === 'clearance') renderClearance();
             else if (currentTab === 'email') renderEmail();
         }
 
@@ -778,6 +784,82 @@
         }
 
         // =================================================================
+        // RENDER CLEARANCE
+        // =================================================================
+        function renderClearance() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let items = promoData.clearance || [];
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                items = items.filter(c => c.category === currentFilter);
+            }
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                items = items.filter(c => 
+                    c.brand?.toLowerCase().includes(q) ||
+                    c.promo?.toLowerCase().includes(q)
+                );
+            }
+            
+            // Sort by discount percentage (highest first)
+            items.sort((a, b) => (b.discount || 0) - (a.discount || 0));
+
+            if (items.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-tags text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO CLEARANCE ITEMS DETECTED</div>
+                        <div class="text-sm mt-2">Sale pages are scanned every 5 minutes</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = items.map(c => {
+                const linkUrl = c.affiliate_url || c.url;
+                const discount = c.discount;
+                const icon = getCategoryIcon(c.category);
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-orange transition-colors duration-300 cursor-pointer overflow-hidden">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
+                        
+                        <div class="p-5">
+                            <div class="flex justify-between items-start mb-4 relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-radar-orange/20 rounded-sm flex items-center justify-center flex-shrink-0">
+                                        <i class="fas fa-tags text-radar-orange"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-loud text-2xl text-white leading-none">${c.brand}</h4>
+                                        <span class="text-xs text-gray-500">${c.category?.toUpperCase() || 'SALE'}</span>
+                                    </div>
+                                </div>
+                                ${discount ? `<span class="text-radar-orange text-xs border border-radar-orange px-1">${discount}% OFF</span>` : ''}
+                            </div>
+                            
+                            <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${c.promo}</p>
+                            
+                            <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
+                                <span class="text-radar-orange font-bold text-sm">CLEARANCE</span>
+                                <span class="text-white group-hover:text-radar-orange font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                    Shop <i class="fas fa-chevron-right text-xs"></i>
+                                </span>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
         // RENDER EMAIL OFFERS
         // =================================================================
         function renderEmail() {
@@ -883,6 +965,7 @@
                 btn.classList.add('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
                 
                 if (currentTab === 'promos') renderPromos();
+                else if (currentTab === 'clearance') renderClearance();
             });
         });
 
