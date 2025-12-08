@@ -776,6 +776,7 @@ def run_scraper():
     print(f"{'='*60}")
     
     results = []
+    clearance_results = []
     success_count = 0
     error_count = 0
     
@@ -795,17 +796,158 @@ def run_scraper():
             print("○ No promo")
             results.append(result)
     
+    # Now scan sale pages
     print(f"\n{'='*60}")
-    print(f"✅ Scan complete: {success_count} promos, {error_count} errors")
+    print(f"🏷️  Scanning sale pages...")
+    print(f"{'='*60}")
+    
+    clearance_results = scan_sale_pages(BRANDS)
+    
+    print(f"\n{'='*60}")
+    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {error_count} errors")
     print(f"{'='*60}\n")
     
-    if results:
-        save_data(results)
+    if results or clearance_results:
+        save_data(results, clearance_results)
     
     return results
 
 
-def save_data(promos):
+def get_sale_urls(base_url):
+    """Generate possible sale page URLs from a base URL"""
+    from urllib.parse import urlparse
+    
+    parsed = urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    
+    # Common sale page patterns
+    patterns = [
+        '/collections/sale',
+        '/sale',
+        '/clearance',
+        '/collections/clearance',
+        '/outlet',
+        '/collections/outlet',
+        '/markdown',
+        '/collections/markdown',
+        '/last-chance',
+        '/collections/last-chance',
+        '/final-sale',
+        '/collections/final-sale',
+    ]
+    
+    return [base + p for p in patterns]
+
+
+def scrape_sale_page(brand, sale_url):
+    """Scrape a sale page for banner/headline text"""
+    try:
+        response = requests.get(sale_url, headers=HEADERS, timeout=10, allow_redirects=True)
+        
+        # Check if page exists (not 404, not redirect to homepage)
+        if response.status_code != 200:
+            return None
+        
+        # Check if we got redirected to homepage (common for non-existent sale pages)
+        from urllib.parse import urlparse
+        final_url = response.url
+        original_parsed = urlparse(sale_url)
+        final_parsed = urlparse(final_url)
+        
+        # If redirected to root or very different page, skip
+        if final_parsed.path in ['/', ''] and original_parsed.path not in ['/', '']:
+            return None
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for sale banners/headlines
+        sale_selectors = [
+            '[class*="collection-header"] h1',
+            '[class*="collection-title"]',
+            '[class*="page-title"]',
+            '[class*="hero"] h1',
+            '[class*="hero"] h2',
+            '[class*="banner"] h1',
+            '[class*="banner"] h2',
+            '[class*="sale"] h1',
+            '[class*="sale"] h2',
+            'h1[class*="title"]',
+            '.collection-hero__title',
+            '.page-header h1',
+            'main h1',
+        ]
+        
+        promo_text = None
+        
+        for selector in sale_selectors:
+            try:
+                el = soup.select_one(selector)
+                if el:
+                    text = el.get_text(strip=True)
+                    if text and len(text) > 3 and len(text) < 150:
+                        # Skip generic titles
+                        if text.lower() not in ['sale', 'shop', 'products', 'all', 'collection']:
+                            promo_text = text
+                            break
+            except:
+                pass
+        
+        # Also look for discount text in the page
+        if not promo_text or 'sale' in promo_text.lower() and '%' not in promo_text:
+            discount_patterns = [
+                r'up to (\d+)% off',
+                r'save (\d+)%',
+                r'(\d+)% off',
+            ]
+            page_text = soup.get_text()
+            for pattern in discount_patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    if promo_text:
+                        promo_text = f"{promo_text} - Up to {match.group(1)}% off"
+                    else:
+                        promo_text = f"Up to {match.group(1)}% off"
+                    break
+        
+        if promo_text:
+            # Extract discount percentage if present
+            discount_match = re.search(r'(\d+)%', promo_text)
+            discount = int(discount_match.group(1)) if discount_match else None
+            
+            return {
+                "brand": brand["name"],
+                "url": sale_url,
+                "affiliate_url": brand.get("affiliate_url"),
+                "category": brand.get("category", "apparel"),
+                "promo": clean_text(promo_text, 100),
+                "discount": discount,
+                "type": "clearance"
+            }
+            
+    except:
+        pass
+    
+    return None
+
+
+def scan_sale_pages(brands):
+    """Scan sale pages for all brands"""
+    clearance = []
+    
+    for brand in brands:
+        sale_urls = get_sale_urls(brand["url"])
+        
+        for sale_url in sale_urls[:3]:  # Only check first 3 patterns per brand
+            result = scrape_sale_page(brand, sale_url)
+            if result:
+                print(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
+                clearance.append(result)
+                break  # Found one, move to next brand
+    
+    return clearance
+
+
+def save_data(promos, clearance=None):
     """Save scraped data to file"""
     active_promos = [p for p in promos if p.get("promo")]
     
@@ -819,13 +961,14 @@ def save_data(promos):
         "emailOffers": [
             {"brand": p["brand"], "offer": p["email_offer"], "method": "Website"}
             for p in promos if p.get("email_offer")
-        ]
+        ],
+        "clearance": clearance or []
     }
     
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
     
-    print(f"💾 Saved: {len(active_promos)} promos, {len(data['codes'])} codes, {len(data['emailOffers'])} email offers")
+    print(f"💾 Saved: {len(active_promos)} promos, {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(data['clearance'])} clearance")
 
 
 def load_data():
@@ -841,7 +984,8 @@ def load_data():
         "lastUpdated": datetime.now().isoformat(),
         "promos": [],
         "codes": [],
-        "emailOffers": []
+        "emailOffers": [],
+        "clearance": []
     }
 
 
