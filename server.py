@@ -282,6 +282,118 @@ HEADERS = {
 # =============================================================================
 # SCRAPER FUNCTIONS
 # =============================================================================
+
+# Junk phrases to filter out (navigation, generic text, etc.)
+JUNK_PHRASES = [
+    'shop now', 'shop all', 'view all', 'see all', 'learn more', 'read more',
+    'sign in', 'log in', 'my account', 'cart', 'checkout', 'search',
+    'menu', 'close', 'open', 'skip to', 'accessibility',
+    'men', 'women', 'new arrivals', 'best sellers', 'collections',
+    'contact us', 'customer service', 'help', 'faq',
+    'privacy policy', 'terms', 'cookie', 'accept',
+    'instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'pinterest',
+    'download', 'app store', 'google play',
+    'united states', 'select country', 'change location',
+    'loading', 'please wait',
+]
+
+# Words that indicate this is likely a real promo
+PROMO_BOOST_WORDS = [
+    'off', 'save', 'discount', 'deal', 'sale', 'code', 'promo',
+    'free shipping', 'gift', 'extra', 'clearance', 'final',
+    'limited', 'today', 'ends', 'last chance', 'hurry',
+    'holiday', 'cyber', 'black friday', 'bogo', 'buy one',
+]
+
+
+def is_junk_text(text):
+    """Check if text is likely navigation/junk"""
+    text_lower = text.lower()
+    
+    # Too short or too long
+    if len(text) < 15 or len(text) > 300:
+        return True
+    
+    # Mostly junk phrases
+    junk_count = sum(1 for phrase in JUNK_PHRASES if phrase in text_lower)
+    word_count = len(text.split())
+    if junk_count > 2 or (junk_count > 0 and word_count < 8):
+        return True
+    
+    # Too many pipes/bullets (likely navigation)
+    if text.count('|') > 2 or text.count('•') > 2 or text.count('›') > 2:
+        return True
+    
+    # Mostly uppercase nav items
+    if text.isupper() and len(text) > 50:
+        return True
+        
+    return False
+
+
+def score_promo_text(text):
+    """Score how likely this is a real promo (higher = better)"""
+    score = 0
+    text_lower = text.lower()
+    
+    # Must have a percentage or dollar amount
+    if re.search(r'\d+%', text):
+        score += 30
+    if re.search(r'\$\d+', text):
+        score += 20
+    
+    # Boost for promo keywords
+    for word in PROMO_BOOST_WORDS:
+        if word in text_lower:
+            score += 10
+    
+    # Boost for promo codes
+    if re.search(r'code[:\s]+[A-Z0-9]+', text, re.IGNORECASE):
+        score += 25
+    
+    # Penalty for junk
+    for phrase in JUNK_PHRASES:
+        if phrase in text_lower:
+            score -= 15
+    
+    # Penalty for being too long (likely grabbed extra stuff)
+    if len(text) > 150:
+        score -= 10
+    if len(text) > 200:
+        score -= 20
+        
+    # Bonus for reasonable length
+    if 30 < len(text) < 100:
+        score += 10
+    
+    return score
+
+
+def clean_promo_text(text):
+    """Clean up promo text, removing junk"""
+    # Normalize whitespace
+    text = ' '.join(text.split())
+    
+    # Remove common prefix/suffix junk
+    remove_patterns = [
+        r'^(skip to content|menu|close|open)\s*',
+        r'\s*(shop now|learn more|view all|see details)\.?\s*$',
+        r'\s*\|\s*(shop now|learn more).*$',
+        r'^\s*\d+\s+(items?|products?)\s*',
+    ]
+    for pattern in remove_patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    # Clean up punctuation
+    text = re.sub(r'\s+([.,!])', r'\1', text)
+    text = re.sub(r'([.,!])\s*\1+', r'\1', text)
+    
+    # Trim
+    text = text.strip(' .-|•')
+    
+    return text
+
+
 def matches_promo(text):
     """Check if text contains promo patterns"""
     text_lower = text.lower()
@@ -300,8 +412,8 @@ def extract_discount(text):
 def extract_code(text):
     """Extract promo code from text"""
     patterns = [
-        r'(?:code|promo|use|enter)[:\s]+([A-Z0-9]{4,20})',
-        r'\b([A-Z]{2,}[0-9]{1,}[A-Z0-9]*)\b',
+        r'(?:code|promo|use|enter|coupon)[:\s]+([A-Z0-9]{4,20})',
+        r'(?:code|promo)[:\s]*"?([A-Z0-9]{4,20})"?',
     ]
     text_upper = text.upper()
     for pattern in patterns:
@@ -309,15 +421,77 @@ def extract_code(text):
         if match:
             code = match.group(1)
             # Filter out common false positives
-            if code not in ['HTTP', 'HTTPS', 'HTML', 'CSS', 'USD', 'OFF', 'NEW', 'SALE', 'SHOP', 'FREE', 'BOGO', 'SIZE', 'VIEW']:
+            blacklist = ['HTTP', 'HTTPS', 'HTML', 'CSS', 'USD', 'OFF', 'NEW', 
+                        'SALE', 'SHOP', 'FREE', 'BOGO', 'SIZE', 'VIEW', 'ITEM',
+                        'ITEMS', 'CART', 'HERE', 'WITH', 'YOUR', 'THIS', 'THAT',
+                        'MORE', 'LESS', 'ONLY', 'JUST', 'BEST', 'GIFT', 'NONE']
+            if code not in blacklist and len(code) >= 4:
                 return code
     return None
 
 
 def clean_text(text, max_len=150):
     """Clean and truncate text"""
-    text = ' '.join(text.split())
+    text = clean_promo_text(text)
     return text[:max_len] + "..." if len(text) > max_len else text
+
+
+def extract_image(soup, base_url):
+    """Extract hero/product image from page"""
+    # Try Open Graph image first (most reliable)
+    og_image = soup.find('meta', property='og:image')
+    if og_image and og_image.get('content'):
+        img_url = og_image['content']
+        if img_url.startswith('//'):
+            img_url = 'https:' + img_url
+        elif img_url.startswith('/'):
+            from urllib.parse import urljoin
+            img_url = urljoin(base_url, img_url)
+        return img_url
+    
+    # Try Twitter card image
+    twitter_image = soup.find('meta', attrs={'name': 'twitter:image'})
+    if twitter_image and twitter_image.get('content'):
+        img_url = twitter_image['content']
+        if img_url.startswith('//'):
+            img_url = 'https:' + img_url
+        elif img_url.startswith('/'):
+            from urllib.parse import urljoin
+            img_url = urljoin(base_url, img_url)
+        return img_url
+    
+    # Try common hero/banner image selectors
+    image_selectors = [
+        '[class*="hero"] img',
+        '[class*="banner"] img',
+        '[class*="featured"] img',
+        '[class*="product"] img',
+        '[class*="collection"] img',
+        '.slick-slide img',
+        '.swiper-slide img',
+        '.carousel img',
+        'main img',
+        'article img',
+    ]
+    
+    for selector in image_selectors:
+        try:
+            imgs = soup.select(selector)
+            for img in imgs[:3]:
+                src = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
+                if src and not 'logo' in src.lower() and not 'icon' in src.lower():
+                    if src.startswith('//'):
+                        src = 'https:' + src
+                    elif src.startswith('/'):
+                        from urllib.parse import urljoin
+                        src = urljoin(base_url, src)
+                    # Skip tiny images or SVGs
+                    if '.svg' not in src.lower() and 'data:image' not in src:
+                        return src
+        except:
+            pass
+    
+    return None
 
 
 def scrape_brand(brand):
@@ -325,12 +499,13 @@ def scrape_brand(brand):
     result = {
         "brand": brand["name"],
         "url": brand["url"],
-        "affiliate_url": brand.get("affiliate_url"),  # Pass through affiliate link if exists
+        "affiliate_url": brand.get("affiliate_url"),
         "category": brand.get("category", "apparel"),
         "tags": brand.get("tags", []),
         "promo": None,
         "code": None,
         "email_offer": None,
+        "image": None,
         "error": None
     }
     
@@ -340,62 +515,109 @@ def scrape_brand(brand):
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Remove script/style elements
-        for element in soup(['script', 'style', 'noscript']):
+        # Extract hero/product image BEFORE decomposing elements
+        result["image"] = extract_image(soup, brand["url"])
+        
+        # Remove script/style/nav elements
+        for element in soup(['script', 'style', 'noscript', 'nav', 'footer']):
             element.decompose()
         
-        # Check announcement bars and headers
-        promo_selectors = [
+        # Collect all candidate promo texts with scores
+        candidates = []
+        
+        # Priority 1: Announcement bars (most likely to have promos)
+        announcement_selectors = [
             '[class*="announcement"]',
-            '[class*="promo"]',
-            '[class*="banner"]',
-            '[class*="marquee"]',
-            '[class*="ticker"]',
+            '[class*="promo-bar"]',
             '[class*="top-bar"]',
             '[class*="topbar"]',
-            '[class*="sale"]',
-            '[class*="offer"]',
-            '[class*="discount"]',
             '[class*="header-message"]',
             '[class*="site-message"]',
-            '[class*="alert"]',
+            '[class*="marquee"]',
+            '[class*="ticker"]',
             '[id*="announcement"]',
             '[id*="promo"]',
-            'header',
+            '[data-section-type="announcement"]',
+            '.announcement-bar',
+            '.promo-banner',
         ]
         
-        for selector in promo_selectors:
+        for selector in announcement_selectors:
             try:
-                elements = soup.select(selector)[:5]
+                elements = soup.select(selector)[:3]
                 for el in elements:
+                    # Try to get just the text content, not nested navs
+                    for nav in el.find_all(['nav', 'ul', 'select']):
+                        nav.decompose()
                     text = el.get_text(separator=' ', strip=True)
-                    if text and 10 < len(text) < 500 and matches_promo(text):
-                        result["promo"] = clean_text(text)
-                        code = extract_code(text)
-                        if code:
-                            result["code"] = code
-                        break
-                if result["promo"]:
-                    break
+                    if text and matches_promo(text) and not is_junk_text(text):
+                        score = score_promo_text(text) + 20  # Bonus for announcement bar
+                        candidates.append((text, score, 'announcement'))
             except:
                 pass
         
-        # Check for email signup offers
-        email_selectors = ['footer', '[class*="footer"]', '[class*="newsletter"]', '[class*="signup"]', '[class*="subscribe"]', '[class*="email"]']
-        for selector in email_selectors:
+        # Priority 2: Banner/hero sections
+        banner_selectors = [
+            '[class*="banner"]',
+            '[class*="hero"]',
+            '[class*="sale"]',
+            '[class*="offer"]',
+            '[class*="discount"]',
+            '[class*="promo"]',
+        ]
+        
+        for selector in banner_selectors:
             try:
                 elements = soup.select(selector)[:3]
+                for el in elements:
+                    # Skip if it's a nav or has too many links
+                    if el.name == 'nav' or len(el.find_all('a')) > 5:
+                        continue
+                    text = el.get_text(separator=' ', strip=True)
+                    if text and matches_promo(text) and not is_junk_text(text):
+                        score = score_promo_text(text)
+                        candidates.append((text, score, 'banner'))
+            except:
+                pass
+        
+        # Priority 3: Look for specific promo text patterns anywhere
+        # Find elements with percentage discounts
+        all_text_elements = soup.find_all(string=re.compile(r'\d+%\s*(off|sale|discount|save)', re.IGNORECASE))
+        for text_el in all_text_elements[:10]:
+            parent = text_el.find_parent()
+            if parent:
+                text = parent.get_text(separator=' ', strip=True)
+                if text and 15 < len(text) < 200 and not is_junk_text(text):
+                    score = score_promo_text(text)
+                    candidates.append((text, score, 'text_match'))
+        
+        # Select best candidate
+        if candidates:
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            best_text, best_score, source = candidates[0]
+            
+            # Only use if score is decent
+            if best_score > 10:
+                result["promo"] = clean_text(best_text)
+                code = extract_code(best_text)
+                if code:
+                    result["code"] = code
+        
+        # Check for email signup offers (separate from main promo)
+        email_selectors = ['[class*="newsletter"]', '[class*="signup"]', '[class*="subscribe"]', '[class*="email-capture"]']
+        for selector in email_selectors:
+            try:
+                elements = soup.select(selector)[:2]
                 for el in elements:
                     text = el.get_text(separator=' ', strip=True)
                     if text:
                         for pattern in EMAIL_PATTERNS:
                             if re.search(pattern, text.lower()):
-                                lines = text.split('.')
-                                for line in lines:
-                                    if re.search(r'\d+%', line.lower()):
-                                        result["email_offer"] = clean_text(line, 100)
-                                        break
-                                break
+                                # Extract just the offer part
+                                match = re.search(r'(\d+%[^.]*(?:off|discount|order)[^.]*)', text, re.IGNORECASE)
+                                if match:
+                                    result["email_offer"] = clean_text(match.group(1), 80)
+                                    break
                 if result["email_offer"]:
                     break
             except:
