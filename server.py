@@ -295,6 +295,14 @@ JUNK_PHRASES = [
     'download', 'app store', 'google play',
     'united states', 'select country', 'change location',
     'loading', 'please wait',
+    # Browser/site warnings
+    'limited support for your browser', 'we recommend switching', 'recommend switching to',
+    'chrome, safari', 'edge, chrome', 'firefox',
+    # Cart/order messages (not promos)
+    'congratulations! your order', 'your order qualifies', 'order qualifies for',
+    'your cart is empty', 'no items in', 'items in your cart',
+    # Currency selectors
+    'currency', 'usd $', 'eur €', 'gbp £',
 ]
 
 # Words that indicate this is likely a real promo
@@ -437,59 +445,85 @@ def clean_text(text, max_len=150):
 
 
 def extract_image(soup, base_url):
-    """Extract hero/product image from page"""
-    # Try Open Graph image first (most reliable)
-    og_image = soup.find('meta', property='og:image')
-    if og_image and og_image.get('content'):
-        img_url = og_image['content']
+    """Extract brand logo from page"""
+    from urllib.parse import urljoin
+    
+    def normalize_url(img_url):
+        if not img_url:
+            return None
         if img_url.startswith('//'):
-            img_url = 'https:' + img_url
+            return 'https:' + img_url
         elif img_url.startswith('/'):
-            from urllib.parse import urljoin
-            img_url = urljoin(base_url, img_url)
+            return urljoin(base_url, img_url)
+        elif img_url.startswith('data:'):
+            return None  # Skip data URIs
         return img_url
     
-    # Try Twitter card image
-    twitter_image = soup.find('meta', attrs={'name': 'twitter:image'})
-    if twitter_image and twitter_image.get('content'):
-        img_url = twitter_image['content']
-        if img_url.startswith('//'):
-            img_url = 'https:' + img_url
-        elif img_url.startswith('/'):
-            from urllib.parse import urljoin
-            img_url = urljoin(base_url, img_url)
-        return img_url
-    
-    # Try common hero/banner image selectors
-    image_selectors = [
-        '[class*="hero"] img',
-        '[class*="banner"] img',
-        '[class*="featured"] img',
-        '[class*="product"] img',
-        '[class*="collection"] img',
-        '.slick-slide img',
-        '.swiper-slide img',
-        '.carousel img',
-        'main img',
-        'article img',
+    # Priority 1: Logo-specific selectors
+    logo_selectors = [
+        '[class*="logo"] img',
+        '[class*="Logo"] img',
+        '[id*="logo"] img',
+        '[id*="Logo"] img',
+        'a[class*="logo"] img',
+        'header a img',  # First image in header link is usually logo
+        '.header img',
+        '.site-header img',
+        '[class*="brand"] img',
     ]
     
-    for selector in image_selectors:
+    for selector in logo_selectors:
         try:
             imgs = soup.select(selector)
-            for img in imgs[:3]:
-                src = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
-                if src and not 'logo' in src.lower() and not 'icon' in src.lower():
-                    if src.startswith('//'):
-                        src = 'https:' + src
-                    elif src.startswith('/'):
-                        from urllib.parse import urljoin
-                        src = urljoin(base_url, src)
-                    # Skip tiny images or SVGs
-                    if '.svg' not in src.lower() and 'data:image' not in src:
-                        return src
+            for img in imgs[:2]:
+                src = img.get('src') or img.get('data-src') or img.get('srcset', '').split()[0]
+                src = normalize_url(src)
+                if src and 'data:image' not in src:
+                    return src
         except:
             pass
+    
+    # Priority 2: SVG logo in header (common pattern)
+    try:
+        header = soup.select_one('header') or soup.select_one('[class*="header"]')
+        if header:
+            svg = header.find('svg')
+            # Can't return SVG inline, so skip to next option
+            
+            # Try img in header
+            img = header.find('img')
+            if img:
+                src = img.get('src') or img.get('data-src')
+                src = normalize_url(src)
+                if src:
+                    return src
+    except:
+        pass
+    
+    # Priority 3: Apple touch icon (usually a clean logo)
+    apple_icon = soup.find('link', rel='apple-touch-icon')
+    if apple_icon and apple_icon.get('href'):
+        src = normalize_url(apple_icon['href'])
+        if src:
+            return src
+    
+    # Priority 4: Large favicon
+    for rel in ['icon', 'shortcut icon']:
+        icon = soup.find('link', rel=rel)
+        if icon and icon.get('href'):
+            href = icon['href']
+            # Skip tiny favicons, prefer larger ones
+            if '32x32' not in href and '16x16' not in href:
+                src = normalize_url(href)
+                if src and '.ico' not in src.lower():
+                    return src
+    
+    # Priority 5: OG image as fallback (better than nothing)
+    og_image = soup.find('meta', property='og:image')
+    if og_image and og_image.get('content'):
+        src = normalize_url(og_image['content'])
+        if src:
+            return src
     
     return None
 
@@ -521,6 +555,23 @@ def scrape_brand(brand):
         # Remove script/style/nav elements
         for element in soup(['script', 'style', 'noscript', 'nav', 'footer']):
             element.decompose()
+        
+        # Remove currency/country selectors (Shopify sites have huge lists)
+        currency_selectors = [
+            '[class*="currency"]',
+            '[class*="country-selector"]',
+            '[class*="locale-selector"]',
+            '[class*="localization"]',
+            '[id*="currency"]',
+            '[id*="country"]',
+            '.disclosure',  # Shopify disclosure menus
+        ]
+        for selector in currency_selectors:
+            try:
+                for el in soup.select(selector):
+                    el.decompose()
+            except:
+                pass
         
         # Collect all candidate promo texts with scores
         candidates = []
