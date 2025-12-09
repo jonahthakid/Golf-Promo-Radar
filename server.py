@@ -10,6 +10,7 @@ import os
 import threading
 import requests
 from datetime import datetime
+from urllib.parse import urlparse, urljoin
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -26,7 +27,7 @@ except ImportError:
 # =============================================================================
 # CONFIG
 # =============================================================================
-REFRESH_INTERVAL_MINUTES = 5
+REFRESH_INTERVAL_MINUTES = 10
 DATA_FILE = "promo_data.json"
 PORT = int(os.environ.get("PORT", 5000))
 
@@ -446,7 +447,6 @@ def clean_text(text, max_len=150):
 
 def extract_image(soup, base_url):
     """Extract brand logo from page"""
-    from urllib.parse import urljoin
     
     def normalize_url(img_url):
         if not img_url:
@@ -796,18 +796,23 @@ def run_scraper():
             print("○ No promo")
             results.append(result)
     
-    # Now scan sale pages
+    # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
     print(f"\n{'='*60}")
     print(f"🏷️  Scanning sale pages...")
     print(f"{'='*60}")
     
-    clearance_results = scan_sale_pages(BRANDS)
+    try:
+        clearance_results = scan_sale_pages(BRANDS)
+    except Exception as e:
+        print(f"⚠️  Sale page scan failed: {e}")
+        clearance_results = []
     
     print(f"\n{'='*60}")
     print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {error_count} errors")
     print(f"{'='*60}\n")
     
-    if results or clearance_results:
+    # Always save main results even if clearance fails
+    if results:
         save_data(results, clearance_results)
     
     return results
@@ -815,8 +820,6 @@ def run_scraper():
 
 def get_sale_urls(base_url):
     """Generate possible sale page URLs from a base URL"""
-    from urllib.parse import urlparse
-    
     parsed = urlparse(base_url)
     base = f"{parsed.scheme}://{parsed.netloc}"
     
@@ -849,7 +852,6 @@ def scrape_sale_page(brand, sale_url):
             return None
         
         # Check if we got redirected to homepage (common for non-existent sale pages)
-        from urllib.parse import urlparse
         final_url = response.url
         original_parsed = urlparse(sale_url)
         final_parsed = urlparse(final_url)
@@ -903,16 +905,29 @@ def scrape_sale_page(brand, sale_url):
             for pattern in discount_patterns:
                 match = re.search(pattern, page_text, re.IGNORECASE)
                 if match:
-                    if promo_text:
-                        promo_text = f"{promo_text} - Up to {match.group(1)}% off"
-                    else:
-                        promo_text = f"Up to {match.group(1)}% off"
-                    break
+                    pct = int(match.group(1))
+                    # Sanity check - ignore absurd percentages
+                    if pct > 0 and pct <= 90:
+                        if promo_text:
+                            promo_text = f"{promo_text} - Up to {pct}% off"
+                        else:
+                            promo_text = f"Up to {pct}% off"
+                        break
         
         if promo_text:
+            # Clean up ugly prefixes
+            promo_text = re.sub(r'^Collection[:\s]*', '', promo_text, flags=re.IGNORECASE)
+            promo_text = re.sub(r'^Sale[:\s]*Collection[:\s]*', 'Sale - ', promo_text, flags=re.IGNORECASE)
+            promo_text = promo_text.strip(' -:')
+            
             # Extract discount percentage if present
             discount_match = re.search(r'(\d+)%', promo_text)
-            discount = int(discount_match.group(1)) if discount_match else None
+            discount = None
+            if discount_match:
+                pct = int(discount_match.group(1))
+                # Only use if reasonable (1-90%)
+                if 0 < pct <= 90:
+                    discount = pct
             
             return {
                 "brand": brand["name"],
@@ -934,7 +949,14 @@ def scan_sale_pages(brands):
     """Scan sale pages for all brands"""
     clearance = []
     
+    # Skip these for sale page scanning - too noisy or structured differently
+    skip_domains = ['amazon.com', 'golf.com/gear', 'dickssportinggoods.com', 'pgatoursuperstore.com', 'golfgalaxy.com']
+    
     for brand in brands:
+        # Skip big retailers
+        if any(domain in brand["url"] for domain in skip_domains):
+            continue
+            
         sale_urls = get_sale_urls(brand["url"])
         
         for sale_url in sale_urls[:3]:  # Only check first 3 patterns per brand
