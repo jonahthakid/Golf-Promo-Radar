@@ -20,10 +20,10 @@ from bs4 import BeautifulSoup
 # =============================================================================
 # IMPACT RADIUS CONFIG
 # =============================================================================
-IMPACT_ENABLED = True
-IMPACT_MEDIA_PARTNER_ID = "5770409"
-IMPACT_ACCOUNT_SID = "IRegUCDRRCRj5770409FimSuCrN9KE65z1"
-IMPACT_AUTH_TOKEN = "LMwc6y~ALQvsLtN_UorwhsXV6eFEyVPD"
+IMPACT_ENABLED = os.environ.get("IMPACT_ENABLED", "true").lower() == "true"
+IMPACT_MEDIA_PARTNER_ID = os.environ.get("IMPACT_MEDIA_PARTNER_ID", "5770409")
+IMPACT_ACCOUNT_SID = os.environ.get("IMPACT_ACCOUNT_SID", "IRegUCDRRCRj5770409FimSuCrN9KE65z1")
+IMPACT_AUTH_TOKEN = os.environ.get("IMPACT_AUTH_TOKEN", "LMwc6y~ALQvsLtN_UorwhsXV6eFEyVPD")
 
 # Import affiliate links (create affiliate_urls.py with your links)
 try:
