@@ -319,6 +319,98 @@ class ImpactAPI:
             self._ads = all_ads
         return self._ads
     
+    def get_actions(self, start_date=None, end_date=None):
+        """Get conversion actions (sales/leads)"""
+        from datetime import datetime, timedelta
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%dT23:59:59Z")
+        
+        params = {
+            "StartDate": start_date,
+            "EndDate": end_date,
+            "PageSize": 1000
+        }
+        data = self._get("Actions", params)
+        if data and "Actions" in data:
+            return data["Actions"]
+        return []
+    
+    def get_action_inquiries(self, start_date=None, end_date=None):
+        """Get action inquiries (pending conversions)"""
+        from datetime import datetime, timedelta
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%dT23:59:59Z")
+        
+        params = {
+            "StartDate": start_date,
+            "EndDate": end_date,
+            "PageSize": 1000
+        }
+        data = self._get("ActionInquiries", params)
+        if data and "ActionInquiries" in data:
+            return data["ActionInquiries"]
+        return []
+    
+    def get_performance_report(self, days=30):
+        """Get aggregated performance data"""
+        from datetime import datetime, timedelta
+        
+        campaigns = self.get_campaigns()
+        actions = self.get_actions()
+        
+        # Aggregate by campaign
+        campaign_stats = {}
+        for campaign in campaigns:
+            campaign_id = campaign.get("CampaignId")
+            campaign_name = campaign.get("CampaignName", "Unknown")
+            campaign_stats[campaign_id] = {
+                "name": campaign_name,
+                "advertiser": campaign.get("AdvertiserName", ""),
+                "tracking_link": campaign.get("TrackingLink", ""),
+                "actions": 0,
+                "revenue": 0.0,
+                "payout": 0.0
+            }
+        
+        total_actions = 0
+        total_revenue = 0.0
+        total_payout = 0.0
+        
+        for action in actions:
+            campaign_id = action.get("CampaignId")
+            amount = float(action.get("Amount", 0) or 0)
+            payout = float(action.get("Payout", 0) or 0)
+            
+            total_actions += 1
+            total_revenue += amount
+            total_payout += payout
+            
+            if campaign_id in campaign_stats:
+                campaign_stats[campaign_id]["actions"] += 1
+                campaign_stats[campaign_id]["revenue"] += amount
+                campaign_stats[campaign_id]["payout"] += payout
+        
+        # Sort campaigns by payout
+        top_campaigns = sorted(
+            [v for v in campaign_stats.values() if v["actions"] > 0],
+            key=lambda x: x["payout"],
+            reverse=True
+        )[:10]
+        
+        return {
+            "period_days": days,
+            "total_campaigns": len(campaigns),
+            "total_actions": total_actions,
+            "total_revenue": round(total_revenue, 2),
+            "total_payout": round(total_payout, 2),
+            "top_campaigns": top_campaigns,
+            "all_campaigns": list(campaign_stats.values())
+        }
+    
     def get_tracking_link_for_brand(self, brand_name):
         """Get tracking link for a brand by matching campaign name"""
         if brand_name in self._tracking_links:
@@ -1186,11 +1278,11 @@ def save_data(promos, clearance=None, impact_deals=None):
         "criticalHitIndex": critical_hit_index,
         "promos": active_promos,
         "codes": [
-            {"brand": p["brand"], "code": p["code"], "discount": p["promo"][:60]}
+            {"brand": p["brand"], "code": p["code"], "discount": p["promo"][:60], "url": p.get("url"), "affiliate_url": p.get("affiliate_url")}
             for p in active_promos if p.get("code")
         ],
         "emailOffers": [
-            {"brand": p["brand"], "offer": p["email_offer"], "method": "Website"}
+            {"brand": p["brand"], "offer": p["email_offer"], "method": "Website", "url": p.get("url"), "affiliate_url": p.get("affiliate_url")}
             for p in promos if p.get("email_offer")
         ],
         "clearance": clearance or [],
@@ -1233,6 +1325,7 @@ def load_data():
 # FLASK APP
 # =============================================================================
 app = Flask(__name__, static_folder='.')
+app.secret_key = os.environ.get("SECRET_KEY", "skratch-radar-secret-key-change-me")
 CORS(app)
 
 @app.route('/')
@@ -1256,6 +1349,128 @@ def status():
         "data_file_exists": os.path.exists(DATA_FILE),
         "brand_count": len(BRANDS),
         "refresh_interval_minutes": REFRESH_INTERVAL_MINUTES
+    })
+
+
+# =============================================================================
+# ADMIN DASHBOARD ROUTES
+# =============================================================================
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "skratch2024")  # Set in Railway env vars
+
+def check_admin_auth():
+    """Check if request has valid admin auth"""
+    from flask import request, session
+    # Check session
+    if session.get('admin_authenticated'):
+        return True
+    # Check header (for API calls)
+    auth_header = request.headers.get('X-Admin-Password')
+    if auth_header == ADMIN_PASSWORD:
+        return True
+    return False
+
+
+@app.route('/admin')
+def admin_dashboard():
+    from flask import session
+    if not session.get('admin_authenticated'):
+        return send_from_directory('.', 'admin_login.html')
+    return send_from_directory('.', 'admin_dashboard.html')
+
+
+@app.route('/admin/login', methods=['POST'])
+def admin_login():
+    from flask import request, session
+    data = request.get_json() or {}
+    password = data.get('password', '')
+    
+    if password == ADMIN_PASSWORD:
+        session['admin_authenticated'] = True
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Invalid password"}), 401
+
+
+@app.route('/admin/logout')
+def admin_logout():
+    from flask import session
+    session.pop('admin_authenticated', None)
+    return jsonify({"success": True})
+
+
+@app.route('/api/admin/stats')
+def admin_stats():
+    """Get performance stats from Impact"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not impact_api:
+        return jsonify({"error": "Impact API not configured"}), 500
+    
+    try:
+        report = impact_api.get_performance_report(days=30)
+        return jsonify(report)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/campaigns')
+def admin_campaigns():
+    """Get all campaigns with tracking links"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not impact_api:
+        return jsonify({"error": "Impact API not configured"}), 500
+    
+    try:
+        campaigns = impact_api.get_campaigns(force_refresh=True)
+        return jsonify({"campaigns": campaigns})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/actions')
+def admin_actions():
+    """Get recent conversion actions"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    if not impact_api:
+        return jsonify({"error": "Impact API not configured"}), 500
+    
+    try:
+        actions = impact_api.get_actions()
+        return jsonify({"actions": actions, "count": len(actions)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/radar-stats')
+def radar_stats():
+    """Get Radar-specific stats"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = load_data()
+    
+    # Count by category
+    category_counts = {}
+    for promo in data.get("promos", []):
+        cat = promo.get("category", "unknown")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+    
+    # Count affiliate-linked vs not
+    with_affiliate = sum(1 for p in data.get("promos", []) if p.get("affiliate_url"))
+    without_affiliate = len(data.get("promos", [])) - with_affiliate
+    
+    return jsonify({
+        "total_promos": len(data.get("promos", [])),
+        "total_codes": len(data.get("codes", [])),
+        "total_email_offers": len(data.get("emailOffers", [])),
+        "total_clearance": len(data.get("clearance", [])),
+        "total_impact_deals": len(data.get("impactDeals", [])),
+        "with_affiliate_link": with_affiliate,
+        "without_affiliate_link": without_affiliate,
+        "by_category": category_counts,
+        "last_updated": data.get("lastUpdated"),
+        "total_brands_monitored": len(BRANDS)
     })
 
 
