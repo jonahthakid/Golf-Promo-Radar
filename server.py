@@ -1,1901 +1,1383 @@
-#!/usr/bin/env python3
-"""
-SKRATCH RADAR - Golf Promo Scraper Backend
-Scans 170+ golf brands for promos, codes, and email offers
-Integrates with Impact Radius for affiliate tracking + deals
-"""
-
-import json
-import re
-import os
-import threading
-import requests
-from datetime import datetime, timedelta
-from urllib.parse import urlparse, urljoin
-from flask import Flask, jsonify, send_from_directory, request, session, Response
-from flask_cors import CORS
-from apscheduler.schedulers.background import BackgroundScheduler
-from bs4 import BeautifulSoup
-
-# =============================================================================
-# IMPACT RADIUS CONFIG
-# =============================================================================
-IMPACT_ENABLED = os.environ.get("IMPACT_ENABLED", "true").lower() == "true"
-IMPACT_MEDIA_PARTNER_ID = os.environ.get("IMPACT_MEDIA_PARTNER_ID", "5770409")
-IMPACT_ACCOUNT_SID = os.environ.get("IMPACT_ACCOUNT_SID", "IRegUCDRRCRj5770409FimSuCrN9KE65z1")
-IMPACT_AUTH_TOKEN = os.environ.get("IMPACT_AUTH_TOKEN", "LMwc6y~ALQvsLtN_UorwhsXV6eFEyVPD")
-
-# Import affiliate links (create affiliate_urls.py with your links)
-try:
-    from affiliate_urls import merge_affiliate_links
-    HAS_AFFILIATE_LINKS = True
-except ImportError:
-    HAS_AFFILIATE_LINKS = False
-    def merge_affiliate_links(brands): return brands
-
-# =============================================================================
-# CONFIG
-# =============================================================================
-REFRESH_INTERVAL_MINUTES = 10
-DATA_FILE = "promo_data.json"
-DEAL_HISTORY_FILE = "deal_history.json"
-PORT = int(os.environ.get("PORT", 5000))
-
-# Freshness settings
-DEAL_EXPIRE_HOURS = 24  # Remove deals not seen in this many hours
-DEAL_STALE_DAYS = 7     # Flag deals running for this many days as "always on"
-
-
-# =============================================================================
-# DEAL FRESHNESS TRACKING
-# =============================================================================
-def get_deal_key(deal):
-    """Generate unique key for a deal based on brand + promo text"""
-    brand = deal.get("brand", "").lower().strip()
-    promo = deal.get("promo", "") or deal.get("offer", "") or ""
-    # Normalize: remove extra spaces, lowercase
-    promo_normalized = re.sub(r'\s+', ' ', promo.lower().strip())
-    # Take first 100 chars to avoid minor text changes creating new deals
-    return f"{brand}:{promo_normalized[:100]}"
-
-
-def load_deal_history():
-    """Load deal history from file"""
-    if os.path.exists(DEAL_HISTORY_FILE):
-        try:
-            with open(DEAL_HISTORY_FILE) as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
-
-
-def save_deal_history(history):
-    """Save deal history to file"""
-    with open(DEAL_HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=2)
-
-
-def parse_expiration_date(promo_text):
-    """Try to extract expiration date from promo text"""
-    if not promo_text:
-        return None
-    
-    text = promo_text.lower()
-    now = datetime.now()
-    
-    # Patterns like "ends 12/20", "through 12/20", "expires 12/20"
-    date_patterns = [
-        r'(?:ends?|through|until|expires?|thru)\s+(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{2,4}))?',
-        r'(?:ends?|through|until|expires?|thru)\s+(\d{1,2})[/\-](\d{1,2})',
-    ]
-    
-    for pattern in date_patterns:
-        match = re.search(pattern, text)
-        if match:
-            try:
-                month = int(match.group(1))
-                day = int(match.group(2))
-                year = now.year
-                if match.lastindex >= 3 and match.group(3):
-                    year = int(match.group(3))
-                    if year < 100:
-                        year += 2000
-                
-                exp_date = datetime(year, month, day, 23, 59, 59)
-                # If date is in past and month is less than current, assume next year
-                if exp_date < now and month < now.month:
-                    exp_date = datetime(year + 1, month, day, 23, 59, 59)
-                return exp_date.isoformat()
-            except:
-                pass
-    
-    # Day-based patterns like "ends Sunday", "ends tomorrow"
-    day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-    for i, day in enumerate(day_names):
-        if f'ends {day}' in text or f'through {day}' in text or f'until {day}' in text:
-            # Calculate next occurrence of that day
-            days_ahead = i - now.weekday()
-            if days_ahead <= 0:  # Target day already happened this week
-                days_ahead += 7
-            exp_date = now + timedelta(days=days_ahead)
-            return exp_date.replace(hour=23, minute=59, second=59).isoformat()
-    
-    # "ends today", "today only"
-    if 'today only' in text or 'ends today' in text:
-        return now.replace(hour=23, minute=59, second=59).isoformat()
-    
-    # "ends tomorrow"
-    if 'ends tomorrow' in text or 'tomorrow only' in text:
-        return (now + timedelta(days=1)).replace(hour=23, minute=59, second=59).isoformat()
-    
-    # "this weekend", "weekend only"
-    if 'this weekend' in text or 'weekend only' in text:
-        days_until_sunday = 6 - now.weekday()
-        if days_until_sunday < 0:
-            days_until_sunday += 7
-        exp_date = now + timedelta(days=days_until_sunday)
-        return exp_date.replace(hour=23, minute=59, second=59).isoformat()
-    
-    # "limited time" - give it 3 days
-    if 'limited time' in text:
-        return (now + timedelta(days=3)).replace(hour=23, minute=59, second=59).isoformat()
-    
-    return None
-
-
-def update_deal_history(deals, history):
-    """
-    Update deal history with current deals.
-    Returns (updated_history, fresh_deals) where fresh_deals have freshness metadata.
-    """
-    now = datetime.now()
-    now_iso = now.isoformat()
-    
-    # Track which deals we see this scan
-    seen_keys = set()
-    
-    fresh_deals = []
-    
-    for deal in deals:
-        key = get_deal_key(deal)
-        seen_keys.add(key)
-        
-        promo_text = deal.get("promo") or deal.get("offer") or ""
-        
-        if key in history:
-            # Existing deal - update last_seen
-            history[key]["last_seen"] = now_iso
-            history[key]["times_seen"] = history[key].get("times_seen", 1) + 1
-            first_seen = datetime.fromisoformat(history[key]["first_seen"])
-        else:
-            # New deal
-            history[key] = {
-                "first_seen": now_iso,
-                "last_seen": now_iso,
-                "times_seen": 1,
-                "brand": deal.get("brand"),
-                "promo_preview": promo_text[:60]
-            }
-            first_seen = now
-        
-        # Parse expiration if not already set
-        if "expires" not in history[key] or not history[key]["expires"]:
-            history[key]["expires"] = parse_expiration_date(promo_text)
-        
-        # Calculate freshness metadata
-        deal_age_hours = (now - first_seen).total_seconds() / 3600
-        deal_age_days = deal_age_hours / 24
-        
-        # Check if expired by parsed date
-        expires = history[key].get("expires")
-        is_expired = False
-        if expires:
-            try:
-                exp_date = datetime.fromisoformat(expires)
-                is_expired = now > exp_date
-            except:
-                pass
-        
-        # Add freshness metadata to deal
-        deal_with_meta = deal.copy()
-        deal_with_meta["first_seen"] = history[key]["first_seen"]
-        deal_with_meta["last_seen"] = history[key]["last_seen"]
-        deal_with_meta["times_seen"] = history[key]["times_seen"]
-        deal_with_meta["is_new"] = deal_age_hours < 24
-        deal_with_meta["is_stale"] = deal_age_days > DEAL_STALE_DAYS
-        deal_with_meta["is_expired"] = is_expired
-        deal_with_meta["expires"] = expires
-        
-        # Only include if not expired
-        if not is_expired:
-            fresh_deals.append(deal_with_meta)
-    
-    # Remove deals not seen in DEAL_EXPIRE_HOURS
-    expired_keys = []
-    for key, data in history.items():
-        if key not in seen_keys:
-            last_seen = datetime.fromisoformat(data["last_seen"])
-            hours_since = (now - last_seen).total_seconds() / 3600
-            if hours_since > DEAL_EXPIRE_HOURS:
-                expired_keys.append(key)
-    
-    for key in expired_keys:
-        del history[key]
-    
-    if expired_keys:
-        print(f"🧹 Cleaned up {len(expired_keys)} stale deals from history")
-    
-    return history, fresh_deals
-
-# =============================================================================
-# FULL BRAND LIST - 170+ Golf Brands
-# Affiliate URLs are merged from affiliate_urls.py if available
-# =============================================================================
-BRANDS = [
-    # ==========================================================================
-    # MAJOR ATHLETIC BRANDS
-    # ==========================================================================
-    {"name": "Nike Golf", "url": "https://www.nike.com/w/golf-3glsm", "category": "apparel", "tags": ["major", "athletic"]},
-    {"name": "Adidas Golf", "url": "https://www.adidas.com/us/golf", "category": "apparel", "tags": ["major", "athletic"]},
-    {"name": "Under Armour Golf", "url": "https://www.underarmour.com/en-us/c/mens/golf/", "category": "apparel", "tags": ["major", "athletic"]},
-    {"name": "PUMA Golf", "url": "https://us.puma.com/us/en/golf", "category": "apparel", "tags": ["major", "athletic", "rickie"]},
-    
-    # ==========================================================================
-    # PREMIUM / LUXURY APPAREL
-    # ==========================================================================
-    {"name": "Peter Millar", "url": "https://www.petermillar.com/golf/", "category": "apparel", "tags": ["premium", "luxury"]},
-    {"name": "G/FORE", "url": "https://www.gfore.com", "category": "apparel", "tags": ["premium", "luxury", "footwear"]},
-    {"name": "Greyson Clothiers", "url": "https://www.greysonclothiers.com", "category": "apparel", "tags": ["premium", "modern"]},
-    {"name": "Ralph Lauren RLX", "url": "https://www.ralphlauren.com/brands-rlx", "category": "apparel", "tags": ["premium", "luxury"]},
-    {"name": "J.Lindeberg", "url": "https://www.jlindeberg.com/us/golf", "category": "apparel", "tags": ["premium", "european"]},
-    {"name": "Holderness & Bourne", "url": "https://www.holderness-bourne.com", "category": "apparel", "tags": ["premium", "polos"]},
-    {"name": "Zero Restriction", "url": "https://www.zerorestriction.com", "category": "apparel", "tags": ["premium", "outerwear"]},
-    {"name": "Dunning Golf", "url": "https://dunninggolf.com", "category": "apparel", "tags": ["premium", "classic"]},
-    {"name": "Kjus", "url": "https://www.kjus.com/us/golf", "category": "apparel", "tags": ["premium", "european", "tech"]},
-    {"name": "Bogner", "url": "https://www.bogner.com/en-us/", "category": "apparel", "tags": ["premium", "luxury", "german"]},
-    {"name": "Southern Tide", "url": "https://www.southerntide.com", "category": "apparel", "tags": ["premium", "southern"]},
-    
-    # ==========================================================================
-    # LIFESTYLE / STREETWEAR / CULTURE
-    # ==========================================================================
-    {"name": "Malbon Golf", "url": "https://www.malbongolf.com", "category": "apparel", "tags": ["lifestyle", "streetwear", "hot"]},
-    {"name": "TravisMathew", "url": "https://www.travismathew.com", "category": "apparel", "tags": ["lifestyle", "socal"]},
-    {"name": "Eastside Golf", "url": "https://www.eastsidegolf.com", "category": "apparel", "tags": ["lifestyle", "streetwear", "jordan"]},
-    {"name": "Bad Birdie", "url": "https://badbirdie.com", "category": "apparel", "tags": ["lifestyle", "prints", "bold"]},
-    {"name": "Sunday Red", "url": "https://www.sundayred.com", "category": "apparel", "tags": ["lifestyle", "tiger"]},
-    {"name": "Bogey Boys", "url": "https://bogeyboys.com", "category": "apparel", "tags": ["lifestyle", "streetwear", "macklemore"]},
-    {"name": "Metalwood Studio", "url": "https://metalwoodstudio.com", "category": "apparel", "tags": ["lifestyle", "streetwear", "vintage"]},
-    {"name": "Students Golf", "url": "https://studentsgolf.com", "category": "apparel", "tags": ["lifestyle", "streetwear"]},
-    {"name": "Random Golf Club", "url": "https://randomgolfclub.com", "category": "apparel", "tags": ["lifestyle", "inclusive"]},
-    {"name": "Quiet Golf", "url": "https://quietgolf.com", "category": "apparel", "tags": ["lifestyle", "minimalist"]},
-    {"name": "Whim Golf", "url": "https://whimgolf.com", "category": "apparel", "tags": ["lifestyle", "streetwear"]},
-    {"name": "Manors", "url": "https://manorsgolf.com", "category": "apparel", "tags": ["lifestyle", "uk"]},
-    {"name": "The Golfer's Journal", "url": "https://www.thegolfersjournal.co", "category": "apparel", "tags": ["lifestyle", "media"]},
-    {"name": "Swing Juice", "url": "https://swingjuice.com", "category": "apparel", "tags": ["lifestyle", "fun"]},
-    {"name": "Blackballed Golf", "url": "https://blackballedgolf.com", "category": "apparel", "tags": ["lifestyle", "diversity"]},
-    {"name": "Gumtree Golf", "url": "https://gumtreegolf.com", "category": "apparel", "tags": ["lifestyle", "nature"]},
-    {"name": "WAAC Golf", "url": "https://waacgolf.com", "category": "apparel", "tags": ["lifestyle", "korean"]},
-    {"name": "ANEW Golf", "url": "https://anewgolf.com", "category": "apparel", "tags": ["lifestyle", "korean", "womens"]},
-    {"name": "Miura Golf", "url": "https://miuragolf.com", "category": "apparel", "tags": ["lifestyle", "premium", "oem"]},
-    
-    # ==========================================================================
-    # WOMEN'S FOCUSED
-    # ==========================================================================
-    {"name": "Lohla Sport", "url": "https://lohlasport.com", "category": "apparel", "tags": ["womens", "performance"]},
-    {"name": "Foray Golf", "url": "https://foraygolf.com", "category": "apparel", "tags": ["womens", "modern"]},
-    {"name": "Tory Sport", "url": "https://www.toryburch.com/en-us/clothing/sport/", "category": "apparel", "tags": ["womens", "luxury"]},
-    {"name": "Daily Sports", "url": "https://us.dailysports.com", "category": "apparel", "tags": ["womens", "european"]},
-    {"name": "Fore All", "url": "https://www.foreall.com", "category": "apparel", "tags": ["womens", "inclusive"]},
-    {"name": "KINONA", "url": "https://kinonasport.com", "category": "apparel", "tags": ["womens", "performance"]},
-    {"name": "A. Putnam", "url": "https://aputnam.com", "category": "apparel", "tags": ["womens", "luxury"]},
-    {"name": "Belyn Key", "url": "https://belynkey.com", "category": "apparel", "tags": ["womens", "classic"]},
-    {"name": "GGblue", "url": "https://ggbluegolf.com", "category": "apparel", "tags": ["womens", "performance"]},
-    {"name": "LIJA", "url": "https://lijastyle.com", "category": "apparel", "tags": ["womens", "activewear"]},
-    {"name": "Jofit", "url": "https://www.jofit.com", "category": "apparel", "tags": ["womens", "performance"]},
-    {"name": "EP Pro / EPNY", "url": "https://epnygolf.com", "category": "apparel", "tags": ["womens", "classic"]},
-    {"name": "Golftini", "url": "https://golftini.com", "category": "apparel", "tags": ["womens", "fun"]},
-    {"name": "Course & Club", "url": "https://courseandclub.com", "category": "apparel", "tags": ["womens", "lifestyle"]},
-    {"name": "Beldrie", "url": "https://beldrie.com", "category": "apparel", "tags": ["womens", "beginner"]},
-    {"name": "Draw and Fade", "url": "https://drawandfade.com", "category": "apparel", "tags": ["womens", "modern"]},
-    {"name": "Famara Golf", "url": "https://famaragolf.com", "category": "apparel", "tags": ["womens", "uk", "art"]},
-    {"name": "Fairmonde", "url": "https://fairmonde.com", "category": "apparel", "tags": ["womens", "new"]},
-    {"name": "Jayebird", "url": "https://jayebirdgolf.com", "category": "apparel", "tags": ["womens", "classic"]},
-    {"name": "Hedge Golf", "url": "https://hedgegolf.com", "category": "apparel", "tags": ["womens", "preppy"]},
-    {"name": "Prio Golf", "url": "https://priogolf.com", "category": "apparel", "tags": ["womens", "lifestyle"]},
-    
-    # ==========================================================================
-    # MID-TIER / VALUE APPAREL
-    # ==========================================================================
-    {"name": "Rhoback", "url": "https://rhoback.com", "category": "apparel", "tags": ["mid-tier", "polos"]},
-    {"name": "Swannies", "url": "https://swannies.co", "category": "apparel", "tags": ["mid-tier", "hoodies"]},
-    {"name": "Radmor", "url": "https://radmor.com", "category": "apparel", "tags": ["mid-tier", "pants"]},
-    {"name": "Devereux Golf", "url": "https://devereuxgolf.com", "category": "apparel", "tags": ["mid-tier", "texas"]},
-    {"name": "Avalon Golf", "url": "https://avalongolf.co", "category": "apparel", "tags": ["mid-tier", "joggers"]},
-    {"name": "B. Draddy", "url": "https://www.bdraddy.com", "category": "apparel", "tags": ["mid-tier", "classic"]},
-    {"name": "Linksoul", "url": "https://linksoul.com", "category": "apparel", "tags": ["mid-tier", "sustainable"]},
-    {"name": "Vuori", "url": "https://vuoriclothing.com", "category": "apparel", "tags": ["mid-tier", "activewear"]},
-    {"name": "Rhone", "url": "https://www.rhone.com", "category": "apparel", "tags": ["mid-tier", "performance"]},
-    {"name": "Bonobos Golf", "url": "https://bonobos.com/shop/golf", "category": "apparel", "tags": ["mid-tier", "pants"]},
-    {"name": "Original Penguin Golf", "url": "https://www.originalpenguin.com/collections/golf", "category": "apparel", "tags": ["mid-tier", "heritage"]},
-    {"name": "Walter Hagen", "url": "https://www.dickssportinggoods.com/f/walter-hagen-golf-apparel", "category": "apparel", "tags": ["value", "dicks"]},
-    {"name": "PGA TOUR Apparel", "url": "https://pgatour.com/shop", "category": "apparel", "tags": ["value", "tour"]},
-    {"name": "Wilson Golf Apparel", "url": "https://www.wilson.com/en-us/golf/apparel", "category": "apparel", "tags": ["value", "heritage"]},
-    {"name": "Amazon Essentials Golf", "url": "https://www.amazon.com/stores/page/E48ACFEA-F0D9-4E34-9C2E-6ABEEF9EDE9C", "category": "apparel", "tags": ["value", "budget"]},
-    {"name": "Uniqlo", "url": "https://www.uniqlo.com/us/en/", "category": "apparel", "tags": ["value", "basics"]},
-    {"name": "Maelreg", "url": "https://maelreg.com", "category": "apparel", "tags": ["value", "amazon"]},
-    {"name": "Brady Brand", "url": "https://bradybrand.com", "category": "apparel", "tags": ["mid-tier", "tom-brady"]},
-    
-    # ==========================================================================
-    # FOOTWEAR
-    # ==========================================================================
-    {"name": "FootJoy", "url": "https://www.footjoy.com", "category": "footwear", "tags": ["footwear", "tour", "classic"]},
-    {"name": "True Linkswear", "url": "https://truelinkswear.com", "category": "footwear", "tags": ["footwear", "comfort"]},
-    {"name": "Ecco Golf", "url": "https://us.ecco.com/golf/", "category": "footwear", "tags": ["footwear", "comfort"]},
-    {"name": "Duca del Cosma", "url": "https://ducadelcosma.com", "category": "footwear", "tags": ["footwear", "italian"]},
-    {"name": "Cuater Golf", "url": "https://cuatergolf.com", "category": "footwear", "tags": ["footwear", "travismathew"]},
-    {"name": "Sqairz Golf", "url": "https://sqairz.com", "category": "footwear", "tags": ["footwear", "performance"]},
-    {"name": "Athalonz Golf", "url": "https://athalonz.com", "category": "footwear", "tags": ["footwear", "performance"]},
-    
-    # ==========================================================================
-    # BAGS & TRAVEL
-    # ==========================================================================
-    {"name": "Vessel Golf", "url": "https://vesselgolf.com", "category": "bags", "tags": ["bags", "premium"]},
-    {"name": "Stitch Golf", "url": "https://stitchgolf.com", "category": "bags", "tags": ["bags", "travel", "leather"]},
-    {"name": "Sun Mountain", "url": "https://www.sunmountain.com", "category": "bags", "tags": ["bags", "carts"]},
-    {"name": "Jones Golf Bags", "url": "https://www.jonessportsco.com", "category": "bags", "tags": ["bags", "carry", "classic"]},
-    {"name": "OGIO Golf", "url": "https://www.ogio.com/golf/", "category": "bags", "tags": ["bags", "callaway"]},
-    {"name": "Subtle Patriot", "url": "https://subtlepatriot.com", "category": "bags", "tags": ["bags", "usa"]},
-    {"name": "Club Glove", "url": "https://clubglove.com", "category": "bags", "tags": ["bags", "travel"]},
-    {"name": "Sunday Golf", "url": "https://sundaygolf.com", "category": "bags", "tags": ["bags", "lightweight"]},
-    {"name": "Ghost Golf", "url": "https://ghostgolf.com", "category": "bags", "tags": ["bags", "accessories", "towels"]},
-    
-    # ==========================================================================
-    # ACCESSORIES / HEADCOVERS
-    # ==========================================================================
-    {"name": "Pins & Aces", "url": "https://pinsandaces.com", "category": "accessories", "tags": ["headcovers", "fun"]},
-    {"name": "Rose & Fire", "url": "https://www.roseandfire.com", "category": "accessories", "tags": ["headcovers", "premium"]},
-    {"name": "PRG Golf", "url": "https://prg.golf", "category": "accessories", "tags": ["headcovers", "irish"]},
-    {"name": "Ace of Clubs Golf", "url": "https://www.aceofclubsgolfco.com", "category": "accessories", "tags": ["accessories", "leather"]},
-    {"name": "Daphne's Headcovers", "url": "https://www.daphnesheadcovers.com", "category": "accessories", "tags": ["headcovers", "novelty"]},
-    {"name": "Cayce Golf", "url": "https://caycegolf.com", "category": "accessories", "tags": ["headcovers", "custom"]},
-    {"name": "Dormie Workshop", "url": "https://dormieworkshop.com", "category": "accessories", "tags": ["headcovers", "leather"]},
-    {"name": "Seamus Golf", "url": "https://seamusgolf.com", "category": "accessories", "tags": ["headcovers", "wool"]},
-    {"name": "Nevr Looz", "url": "https://nevrlooz.com", "category": "accessories", "tags": ["accessories", "tools"]},
-    {"name": "Transfusion Golf", "url": "https://transfusiongolf.com", "category": "accessories", "tags": ["accessories", "drinkware"]},
-    {"name": "Fore Ewe", "url": "https://foreewe.com", "category": "accessories", "tags": ["headcovers", "sheep"]},
-    {"name": "Winston Collection", "url": "https://winstoncollection.com", "category": "accessories", "tags": ["accessories", "leather"]},
-    {"name": "VivanTee Golf", "url": "https://vivanteegolf.com", "category": "accessories", "tags": ["accessories", "gloves"]},
-    {"name": "Branded Bills", "url": "https://www.brandedbills.com", "category": "accessories", "tags": ["hats", "state"]},
-    {"name": "Melin", "url": "https://melin.com", "category": "accessories", "tags": ["hats", "premium"]},
-    {"name": "Imperial Headwear", "url": "https://imperialsports.com", "category": "accessories", "tags": ["hats", "tour"]},
-    {"name": "Pukka Golf", "url": "https://pukka.com", "category": "accessories", "tags": ["hats", "custom"]},
-    {"name": "Oakley Golf", "url": "https://www.oakley.com/en-us/category/golf", "category": "accessories", "tags": ["eyewear", "sunglasses"]},
-    
-    # ==========================================================================
-    # OEM / EQUIPMENT (with apparel)
-    # ==========================================================================
-    {"name": "TaylorMade", "url": "https://www.taylormadegolf.com", "category": "oem", "tags": ["clubs", "apparel"]},
-    {"name": "Callaway Golf", "url": "https://www.callawaygolf.com", "category": "oem", "tags": ["clubs", "balls"]},
-    {"name": "Callaway Apparel", "url": "https://www.callawayapparel.com", "category": "oem", "tags": ["apparel"]},
-    {"name": "Titleist", "url": "https://www.titleist.com", "category": "oem", "tags": ["balls", "clubs"]},
-    {"name": "Cobra Golf", "url": "https://www.cobragolf.com", "category": "oem", "tags": ["clubs", "puma"]},
-    {"name": "PING", "url": "https://ping.com", "category": "oem", "tags": ["clubs", "fitting"]},
-    {"name": "Cleveland Golf", "url": "https://www.clevelandgolf.com", "category": "oem", "tags": ["wedges", "clubs"]},
-    {"name": "Srixon Golf", "url": "https://www.srixon.com", "category": "oem", "tags": ["balls", "clubs"]},
-    {"name": "Mizuno Golf", "url": "https://mizunogolf.com", "category": "oem", "tags": ["irons", "apparel"]},
-    {"name": "Bridgestone Golf", "url": "https://www.bridgestonegolf.com", "category": "oem", "tags": ["balls", "clubs"]},
-    {"name": "PXG", "url": "https://www.pxg.com", "category": "oem", "tags": ["clubs", "premium", "apparel"]},
-    {"name": "Wilson Sporting Goods", "url": "https://www.wilson.com/en-us/golf", "category": "oem", "tags": ["clubs", "balls"]},
-    {"name": "Tour Edge", "url": "https://www.touredge.com", "category": "oem", "tags": ["clubs", "value"]},
-    {"name": "Honma Golf", "url": "https://us.honmagolf.com", "category": "oem", "tags": ["clubs", "japanese", "luxury"]},
-    {"name": "Bettinardi Golf", "url": "https://bettinardi.com", "category": "oem", "tags": ["putters", "premium"]},
-    {"name": "Scotty Cameron", "url": "https://www.scottycameron.com", "category": "oem", "tags": ["putters", "titleist"]},
-    {"name": "Odyssey Golf", "url": "https://www.odysseygolf.com", "category": "oem", "tags": ["putters", "callaway"]},
-    {"name": "XXIO Golf", "url": "https://www.xxio.com/us/", "category": "oem", "tags": ["clubs", "lightweight"]},
-    {"name": "Ben Hogan Golf", "url": "https://benhogangolf.com", "category": "oem", "tags": ["clubs", "heritage"]},
-    {"name": "L.A.B. Golf", "url": "https://labgolf.com", "category": "oem", "tags": ["putters", "lie-angle"]},
-    {"name": "Maxfli", "url": "https://www.maxfli.com", "category": "oem", "tags": ["balls", "dicks"]},
-    {"name": "Vice Golf", "url": "https://www.vicegolf.com", "category": "oem", "tags": ["balls", "dtc"]},
-    {"name": "OnCore Golf", "url": "https://oncoregolf.com", "category": "oem", "tags": ["balls", "dtc"]},
-    {"name": "Snell Golf", "url": "https://www.snellgolf.com", "category": "oem", "tags": ["balls", "dtc"]},
-    {"name": "Seed Golf", "url": "https://seedgolf.com", "category": "oem", "tags": ["balls", "dtc"]},
-    {"name": "Cut Golf", "url": "https://cutgolf.co", "category": "oem", "tags": ["balls", "dtc"]},
-    {"name": "SuperStroke", "url": "https://superstrokeusa.com", "category": "oem", "tags": ["grips", "putters"]},
-    {"name": "Golf Pride", "url": "https://www.golfpride.com", "category": "oem", "tags": ["grips"]},
-    {"name": "Lamkin Grips", "url": "https://www.lamkingrips.com", "category": "oem", "tags": ["grips"]},
-    {"name": "Fujikura Golf", "url": "https://www.fujikuragolf.com", "category": "oem", "tags": ["shafts"]},
-    {"name": "Project X Golf", "url": "https://www.projectxgolf.com", "category": "oem", "tags": ["shafts", "true-temper"]},
-    {"name": "Graphite Design", "url": "https://www.graphitedesign.com", "category": "oem", "tags": ["shafts", "japanese"]},
-    
-    # ==========================================================================
-    # RETAILERS
-    # ==========================================================================
-    {"name": "PGA Tour Superstore", "url": "https://www.pgatoursuperstore.com", "category": "retailer", "tags": ["multi-brand", "big-box"]},
-    {"name": "Golf Galaxy", "url": "https://www.golfgalaxy.com", "category": "retailer", "tags": ["multi-brand", "dicks"]},
-    {"name": "Carl's Golfland", "url": "https://www.carlsgolfland.com", "category": "retailer", "tags": ["multi-brand", "michigan"]},
-    {"name": "Rock Bottom Golf", "url": "https://www.rockbottomgolf.com", "category": "retailer", "tags": ["discount", "value"]},
-    {"name": "Global Golf", "url": "https://www.globalgolf.com", "category": "retailer", "tags": ["used", "trade-in"]},
-    {"name": "2nd Swing", "url": "https://www.2ndswing.com", "category": "retailer", "tags": ["used", "trade-in"]},
-    {"name": "Golf Apparel Shop", "url": "https://www.golfapparelshop.com", "category": "retailer", "tags": ["apparel", "value"]},
-    {"name": "Trendy Golf", "url": "https://www.trendygolfusa.com", "category": "retailer", "tags": ["premium", "curated"]},
-    {"name": "Worldwide Golf Shops", "url": "https://www.worldwidegolfshops.com", "category": "retailer", "tags": ["multi-brand"]},
-    {"name": "Golf Discount", "url": "https://www.golfdiscount.com", "category": "retailer", "tags": ["discount", "seattle"]},
-    {"name": "Budget Golf", "url": "https://www.budgetgolf.com", "category": "retailer", "tags": ["discount"]},
-    {"name": "Fairway Golf", "url": "https://fairwaygolfusa.com", "category": "retailer", "tags": ["japanese", "jdm"]},
-    {"name": "Golf Locker", "url": "https://www.golflocker.com", "category": "retailer", "tags": ["apparel", "accessories"]},
-    {"name": "The Golf Warehouse", "url": "https://www.tgw.com", "category": "retailer", "tags": ["multi-brand"]},
-    {"name": "Rain or Shine Golf", "url": "https://rainorshinegolf.com", "category": "retailer", "tags": ["simulators", "equipment"]},
-    {"name": "Golf Avenue", "url": "https://www.golfavenue.com", "category": "retailer", "tags": ["used", "canada"]},
-    {"name": "Golf Headquarters", "url": "https://www.golfheadquarters.com", "category": "retailer", "tags": ["multi-brand"]},
-    {"name": "Golfers Warehouse", "url": "https://www.golferswarehouse.com", "category": "retailer", "tags": ["northeast"]},
-    {"name": "Dick's Sporting Goods", "url": "https://www.dickssportinggoods.com/f/golf", "category": "retailer", "tags": ["big-box"]},
-    {"name": "Amazon Golf", "url": "https://www.amazon.com/golf/b?node=3410851", "category": "retailer", "tags": ["marketplace"]},
-    
-    # ==========================================================================
-    # IMPACT PARTNER BRANDS (auto-added from Impact Radius)
-    # ==========================================================================
-    {"name": "Mizzen+Main", "url": "https://www.mizzenandmain.com", "category": "apparel", "tags": ["premium", "dress-shirts", "impact"]},
-    {"name": "Boston Scally", "url": "https://www.bostonscally.com", "category": "accessories", "tags": ["hats", "caps", "impact"]},
-    {"name": "Stewart Golf", "url": "https://www.stewartgolfusa.com", "category": "equipment", "tags": ["push-carts", "electric", "impact"]},
-    {"name": "Scheels", "url": "https://www.scheels.com/c/golf", "category": "retailer", "tags": ["big-box", "midwest", "impact"]},
-    {"name": "Sounder Golf", "url": "https://www.soundergolf.com", "category": "apparel", "tags": ["lifestyle", "modern", "impact"]},
-    {"name": "Rapsodo", "url": "https://rapsodo.com", "category": "tech", "tags": ["launch-monitor", "simulator", "impact"]},
-    {"name": "Five Iron Golf", "url": "https://fiveirongolf.com", "category": "experience", "tags": ["simulator", "urban", "impact"]},
-]
-
-# Merge affiliate links into brands list
-BRANDS = merge_affiliate_links(BRANDS)
-
-# =============================================================================
-# IMPACT RADIUS API INTEGRATION
-# =============================================================================
-class ImpactAPI:
-    """Impact Radius API client for fetching campaigns, ads, and tracking links"""
-    
-    def __init__(self):
-        self.media_partner_id = IMPACT_MEDIA_PARTNER_ID
-        self.account_sid = IMPACT_ACCOUNT_SID
-        self.auth_token = IMPACT_AUTH_TOKEN
-        self.base_url = f"https://api.impact.com/Mediapartners/{self.account_sid}"
-        self.session = requests.Session()
-        self.session.auth = (self.account_sid, self.auth_token)
-        self.session.headers.update({
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        })
-        # Cache
-        self._campaigns = None
-        self._ads = None
-        self._tracking_links = {}
-    
-    def _get(self, endpoint, params=None):
-        """Make GET request to Impact API"""
-        url = f"{self.base_url}/{endpoint}"
-        try:
-            response = self.session.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Impact API Error: {e}")
-            return None
-    
-    def get_campaigns(self, force_refresh=False):
-        """Get all active campaigns (cached)"""
-        if self._campaigns is None or force_refresh:
-            data = self._get("Campaigns", {"PageSize": 100})
-            if data and "Campaigns" in data:
-                self._campaigns = data["Campaigns"]
-            else:
-                self._campaigns = []
-        return self._campaigns
-    
-    def get_ads(self, force_refresh=False):
-        """Get all available ads/deals (cached)"""
-        if self._ads is None or force_refresh:
-            all_ads = []
-            page = 1
-            while True:
-                data = self._get("Ads", {"PageSize": 100, "Page": page})
-                if data and "Ads" in data:
-                    all_ads.extend(data["Ads"])
-                    if len(data["Ads"]) < 100:
-                        break
-                    page += 1
-                else:
-                    break
-            self._ads = all_ads
-        return self._ads
-    
-    def get_actions(self, start_date=None, end_date=None):
-        """Get conversion actions (sales/leads)"""
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
-        if not end_date:
-            end_date = datetime.now().strftime("%Y-%m-%dT23:59:59Z")
-        
-        params = {
-            "StartDate": start_date,
-            "EndDate": end_date,
-            "PageSize": 1000
-        }
-        data = self._get("Actions", params)
-        if data and "Actions" in data:
-            return data["Actions"]
-        return []
-    
-    def get_action_inquiries(self, start_date=None, end_date=None):
-        """Get action inquiries (pending conversions)"""
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
-        if not end_date:
-            end_date = datetime.now().strftime("%Y-%m-%dT23:59:59Z")
-        
-        params = {
-            "StartDate": start_date,
-            "EndDate": end_date,
-            "PageSize": 1000
-        }
-        data = self._get("ActionInquiries", params)
-        if data and "ActionInquiries" in data:
-            return data["ActionInquiries"]
-        return []
-    
-    def get_performance_report(self, days=30):
-        """Get aggregated performance data"""
-        campaigns = self.get_campaigns()
-        actions = self.get_actions()
-        
-        # Aggregate by campaign
-        campaign_stats = {}
-        for campaign in campaigns:
-            campaign_id = campaign.get("CampaignId")
-            campaign_name = campaign.get("CampaignName", "Unknown")
-            campaign_stats[campaign_id] = {
-                "name": campaign_name,
-                "advertiser": campaign.get("AdvertiserName", ""),
-                "tracking_link": campaign.get("TrackingLink", ""),
-                "actions": 0,
-                "revenue": 0.0,
-                "payout": 0.0
-            }
-        
-        total_actions = 0
-        total_revenue = 0.0
-        total_payout = 0.0
-        
-        for action in actions:
-            campaign_id = action.get("CampaignId")
-            amount = float(action.get("Amount", 0) or 0)
-            payout = float(action.get("Payout", 0) or 0)
-            
-            total_actions += 1
-            total_revenue += amount
-            total_payout += payout
-            
-            if campaign_id in campaign_stats:
-                campaign_stats[campaign_id]["actions"] += 1
-                campaign_stats[campaign_id]["revenue"] += amount
-                campaign_stats[campaign_id]["payout"] += payout
-        
-        # Sort campaigns by payout
-        top_campaigns = sorted(
-            [v for v in campaign_stats.values() if v["actions"] > 0],
-            key=lambda x: x["payout"],
-            reverse=True
-        )[:10]
-        
-        return {
-            "period_days": days,
-            "total_campaigns": len(campaigns),
-            "total_actions": total_actions,
-            "total_revenue": round(total_revenue, 2),
-            "total_payout": round(total_payout, 2),
-            "top_campaigns": top_campaigns,
-            "all_campaigns": list(campaign_stats.values())
-        }
-    
-    def get_tracking_link_for_brand(self, brand_name):
-        """Get tracking link for a brand by matching campaign name"""
-        if brand_name in self._tracking_links:
-            return self._tracking_links[brand_name]
-        
-        campaigns = self.get_campaigns()
-        brand_lower = brand_name.lower().replace(" golf", "").replace("golf ", "").strip()
-        
-        for campaign in campaigns:
-            campaign_name = campaign.get("CampaignName", "").lower()
-            advertiser_name = campaign.get("AdvertiserName", "").lower()
-            
-            # Try to match
-            for name in [campaign_name, advertiser_name]:
-                name_clean = name.replace(" golf", "").replace("golf ", "").strip()
-                if brand_lower in name_clean or name_clean in brand_lower:
-                    link = campaign.get("TrackingLink", "")
-                    if link:
-                        self._tracking_links[brand_name] = link
-                        return link
-        
-        return None
-    
-    def get_deals_for_brand(self, brand_name):
-        """Get any deals/promos from Impact for a brand"""
-        deals = []
-        ads = self.get_ads()
-        brand_lower = brand_name.lower().replace(" golf", "").replace("golf ", "").strip()
-        
-        for ad in ads:
-            campaign_name = ad.get("CampaignName", "").lower()
-            if brand_lower in campaign_name or campaign_name.replace(" golf", "").strip() in brand_lower:
-                description = ad.get("Description", "")
-                if description and len(description) > 10:
-                    # Filter out generic product descriptions
-                    if any(word in description.lower() for word in ['off', 'save', 'free', 'discount', '%', 'sale']):
-                        deals.append({
-                            "text": description,
-                            "link": ad.get("TrackingLink", ""),
-                            "type": ad.get("Type", "TEXT_LINK")
-                        })
-        
-        return deals
-    
-    def get_all_deals(self):
-        """Get all deals from Impact, formatted for Radar"""
-        all_deals = []
-        ads = self.get_ads()
-        campaigns = {c.get("CampaignId"): c for c in self.get_campaigns()}
-        
-        for ad in ads:
-            description = ad.get("Description", "")
-            # Only include if it looks like a real deal
-            if description and len(description) > 10:
-                if any(word in description.lower() for word in ['off', 'save', 'free', 'discount', '%', 'sale', 'refer']):
-                    campaign_name = ad.get("CampaignName", "Unknown")
-                    tracking_link = ad.get("TrackingLink", "")
-                    
-                    # Extract discount percentage if present
-                    discount_match = re.search(r'(\d+)%', description)
-                    discount = int(discount_match.group(1)) if discount_match else 0
-                    
-                    all_deals.append({
-                        "brand": campaign_name,
-                        "promo": description[:150],
-                        "discount": discount,
-                        "affiliate_url": tracking_link,
-                        "source": "impact",
-                        "type": "impact_deal"
-                    })
-        
-        return all_deals
-
-
-# Global Impact API instance
-impact_api = None
-if IMPACT_ENABLED:
-    try:
-        impact_api = ImpactAPI()
-        print("✅ Impact Radius API initialized")
-    except Exception as e:
-        print(f"⚠️  Impact API init failed: {e}")
-        impact_api = None
-
-
-def merge_impact_tracking_links(brands):
-    """Merge Impact tracking links into brands that don't have affiliate URLs"""
-    if not impact_api:
-        return brands
-    
-    updated = 0
-    for brand in brands:
-        if not brand.get("affiliate_url"):
-            tracking_link = impact_api.get_tracking_link_for_brand(brand["name"])
-            if tracking_link:
-                brand["affiliate_url"] = tracking_link
-                updated += 1
-    
-    if updated > 0:
-        print(f"✅ Added {updated} Impact tracking links to brands")
-    
-    return brands
-
-
-# Merge Impact tracking links
-if IMPACT_ENABLED and impact_api:
-    BRANDS = merge_impact_tracking_links(BRANDS)
-
-# =============================================================================
-# DETECTION PATTERNS
-# =============================================================================
-PROMO_PATTERNS = [
-    r'(\d+)%\s*off',
-    r'save\s*\$?(\d+)',
-    r'free shipping',
-    r'(code|promo)[:\s]+([A-Z0-9]+)',
-    r'sitewide',
-    r'limited time',
-    r'flash sale',
-    r'extra\s+(\d+)%',
-    r'up to (\d+)%',
-    r'sale',
-    r'clearance',
-    r'bogo',
-    r'buy one get',
-    r'final sale',
-    r'warehouse sale',
-    r'holiday',
-    r'cyber',
-    r'black friday',
-]
-
-EMAIL_PATTERNS = [
-    r'(\d+)%.*?(sign|join|subscribe|email|newsletter|first)',
-    r'(sign|join|subscribe).*?(\d+)%',
-    r'first.*?order.*?(\d+)%',
-    r'welcome.*?(\d+)%',
-    r'join.*?list.*?(\d+)',
-    r'email.*?exclusive',
-]
-
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Accept-Encoding': 'gzip, deflate',
-    'Connection': 'keep-alive',
-}
-
-# =============================================================================
-# SCRAPER FUNCTIONS
-# =============================================================================
-
-# Junk phrases to filter out (navigation, generic text, etc.)
-JUNK_PHRASES = [
-    'shop now', 'shop all', 'view all', 'see all', 'learn more', 'read more',
-    'sign in', 'log in', 'my account', 'cart', 'checkout', 'search',
-    'menu', 'close', 'open', 'skip to', 'accessibility',
-    'men', 'women', 'new arrivals', 'best sellers', 'collections',
-    'contact us', 'customer service', 'help', 'faq',
-    'privacy policy', 'terms', 'cookie', 'accept',
-    'instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'pinterest',
-    'download', 'app store', 'google play',
-    'united states', 'select country', 'change location',
-    'loading', 'please wait',
-    # Browser/site warnings
-    'limited support for your browser', 'we recommend switching', 'recommend switching to',
-    'chrome, safari', 'edge, chrome', 'firefox',
-    # Cart/order messages (not promos)
-    'congratulations! your order', 'your order qualifies', 'order qualifies for',
-    'your cart is empty', 'no items in', 'items in your cart',
-    # Currency selectors
-    'currency', 'usd $', 'eur €', 'gbp £',
-]
-
-# Words that indicate this is likely a real promo
-PROMO_BOOST_WORDS = [
-    'off', 'save', 'discount', 'deal', 'sale', 'code', 'promo',
-    'free shipping', 'gift', 'extra', 'clearance', 'final',
-    'limited', 'today', 'ends', 'last chance', 'hurry',
-    'holiday', 'cyber', 'black friday', 'bogo', 'buy one',
-]
-
-
-def is_junk_text(text):
-    """Check if text is likely navigation/junk"""
-    text_lower = text.lower()
-    
-    # Too short or too long
-    if len(text) < 15 or len(text) > 300:
-        return True
-    
-    # Mostly junk phrases
-    junk_count = sum(1 for phrase in JUNK_PHRASES if phrase in text_lower)
-    word_count = len(text.split())
-    if junk_count > 2 or (junk_count > 0 and word_count < 8):
-        return True
-    
-    # Too many pipes/bullets (likely navigation)
-    if text.count('|') > 2 or text.count('•') > 2 or text.count('›') > 2:
-        return True
-    
-    # Mostly uppercase nav items
-    if text.isupper() and len(text) > 50:
-        return True
-        
-    return False
-
-
-def score_promo_text(text):
-    """Score how likely this is a real promo (higher = better)"""
-    score = 0
-    text_lower = text.lower()
-    
-    # Must have a percentage or dollar amount
-    if re.search(r'\d+%', text):
-        score += 30
-    if re.search(r'\$\d+', text):
-        score += 20
-    
-    # Boost for promo keywords
-    for word in PROMO_BOOST_WORDS:
-        if word in text_lower:
-            score += 10
-    
-    # Boost for promo codes
-    if re.search(r'code[:\s]+[A-Z0-9]+', text, re.IGNORECASE):
-        score += 25
-    
-    # Penalty for junk
-    for phrase in JUNK_PHRASES:
-        if phrase in text_lower:
-            score -= 15
-    
-    # Penalty for being too long (likely grabbed extra stuff)
-    if len(text) > 150:
-        score -= 10
-    if len(text) > 200:
-        score -= 20
-        
-    # Bonus for reasonable length
-    if 30 < len(text) < 100:
-        score += 10
-    
-    return score
-
-
-def clean_promo_text(text):
-    """Clean up promo text, removing junk"""
-    # Normalize whitespace
-    text = ' '.join(text.split())
-    
-    # Remove common prefix/suffix junk
-    remove_patterns = [
-        r'^(skip to content|menu|close|open)\s*',
-        r'\s*(shop now|learn more|view all|see details)\.?\s*$',
-        r'\s*\|\s*(shop now|learn more).*$',
-        r'^\s*\d+\s+(items?|products?)\s*',
-    ]
-    for pattern in remove_patterns:
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-    
-    # Clean up punctuation
-    text = re.sub(r'\s+([.,!])', r'\1', text)
-    text = re.sub(r'([.,!])\s*\1+', r'\1', text)
-    
-    # Trim
-    text = text.strip(' .-|•')
-    
-    return text
-
-
-def matches_promo(text):
-    """Check if text contains promo patterns"""
-    text_lower = text.lower()
-    for pattern in PROMO_PATTERNS:
-        if re.search(pattern, text_lower):
-            return True
-    return False
-
-
-def extract_discount(text):
-    """Extract discount percentage from text"""
-    match = re.search(r'(\d+)%', text)
-    return int(match.group(1)) if match else 0
-
-
-def extract_code(text):
-    """Extract promo code from text"""
-    patterns = [
-        r'(?:code|promo|use|enter|coupon)[:\s]+([A-Z0-9]{4,20})',
-        r'(?:code|promo)[:\s]*"?([A-Z0-9]{4,20})"?',
-    ]
-    text_upper = text.upper()
-    for pattern in patterns:
-        match = re.search(pattern, text_upper)
-        if match:
-            code = match.group(1)
-            # Filter out common false positives
-            blacklist = ['HTTP', 'HTTPS', 'HTML', 'CSS', 'USD', 'OFF', 'NEW', 
-                        'SALE', 'SHOP', 'FREE', 'BOGO', 'SIZE', 'VIEW', 'ITEM',
-                        'ITEMS', 'CART', 'HERE', 'WITH', 'YOUR', 'THIS', 'THAT',
-                        'MORE', 'LESS', 'ONLY', 'JUST', 'BEST', 'GIFT', 'NONE']
-            if code not in blacklist and len(code) >= 4:
-                return code
-    return None
-
-
-def clean_text(text, max_len=150):
-    """Clean and truncate text"""
-    text = clean_promo_text(text)
-    return text[:max_len] + "..." if len(text) > max_len else text
-
-
-def extract_image(soup, base_url):
-    """Extract brand logo from page"""
-    
-    def normalize_url(img_url):
-        if not img_url:
-            return None
-        if img_url.startswith('//'):
-            return 'https:' + img_url
-        elif img_url.startswith('/'):
-            return urljoin(base_url, img_url)
-        elif img_url.startswith('data:'):
-            return None  # Skip data URIs
-        return img_url
-    
-    # Priority 1: Logo-specific selectors
-    logo_selectors = [
-        '[class*="logo"] img',
-        '[class*="Logo"] img',
-        '[id*="logo"] img',
-        '[id*="Logo"] img',
-        'a[class*="logo"] img',
-        'header a img',  # First image in header link is usually logo
-        '.header img',
-        '.site-header img',
-        '[class*="brand"] img',
-    ]
-    
-    for selector in logo_selectors:
-        try:
-            imgs = soup.select(selector)
-            for img in imgs[:2]:
-                src = img.get('src') or img.get('data-src') or img.get('srcset', '').split()[0]
-                src = normalize_url(src)
-                if src and 'data:image' not in src:
-                    return src
-        except:
-            pass
-    
-    # Priority 2: SVG logo in header (common pattern)
-    try:
-        header = soup.select_one('header') or soup.select_one('[class*="header"]')
-        if header:
-            svg = header.find('svg')
-            # Can't return SVG inline, so skip to next option
-            
-            # Try img in header
-            img = header.find('img')
-            if img:
-                src = img.get('src') or img.get('data-src')
-                src = normalize_url(src)
-                if src:
-                    return src
-    except:
-        pass
-    
-    # Priority 3: Apple touch icon (usually a clean logo)
-    apple_icon = soup.find('link', rel='apple-touch-icon')
-    if apple_icon and apple_icon.get('href'):
-        src = normalize_url(apple_icon['href'])
-        if src:
-            return src
-    
-    # Priority 4: Large favicon
-    for rel in ['icon', 'shortcut icon']:
-        icon = soup.find('link', rel=rel)
-        if icon and icon.get('href'):
-            href = icon['href']
-            # Skip tiny favicons, prefer larger ones
-            if '32x32' not in href and '16x16' not in href:
-                src = normalize_url(href)
-                if src and '.ico' not in src.lower():
-                    return src
-    
-    # Priority 5: OG image as fallback (better than nothing)
-    og_image = soup.find('meta', property='og:image')
-    if og_image and og_image.get('content'):
-        src = normalize_url(og_image['content'])
-        if src:
-            return src
-    
-    return None
-
-
-def scrape_brand(brand):
-    """Scrape a single brand using requests"""
-    result = {
-        "brand": brand["name"],
-        "url": brand["url"],
-        "affiliate_url": brand.get("affiliate_url"),
-        "category": brand.get("category", "apparel"),
-        "tags": brand.get("tags", []),
-        "promo": None,
-        "code": None,
-        "email_offer": None,
-        "image": None,
-        "error": None
-    }
-    
-    try:
-        response = requests.get(brand["url"], headers=HEADERS, timeout=15, allow_redirects=True)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Extract hero/product image BEFORE decomposing elements
-        result["image"] = extract_image(soup, brand["url"])
-        
-        # =================================================================
-        # CHECK FOR EMAIL SIGNUP OFFERS BEFORE REMOVING FOOTER
-        # =================================================================
-        email_selectors = [
-            # Footer newsletter sections
-            'footer [class*="newsletter"]',
-            'footer [class*="signup"]',
-            'footer [class*="subscribe"]',
-            'footer [class*="email"]',
-            '[class*="footer"] [class*="newsletter"]',
-            '[class*="footer"] [class*="signup"]',
-            
-            # Popup/modal selectors (often contain email offers)
-            '[class*="popup"]',
-            '[class*="modal"]',
-            '[class*="klaviyo"]',  # Popular email popup tool
-            '[class*="privy"]',    # Another popular one
-            '[class*="justuno"]',
-            '[class*="optinmonster"]',
-            '[class*="wheelio"]',
-            '[class*="spin"]',     # Spin-to-win popups
-            
-            # General newsletter/signup areas
-            '[class*="newsletter"]',
-            '[class*="signup"]',
-            '[class*="subscribe"]',
-            '[class*="email-capture"]',
-            '[class*="email-signup"]',
-            '[class*="join"]',
-            '[id*="newsletter"]',
-            '[id*="signup"]',
-            '[id*="subscribe"]',
-            
-            # Form areas that might have offers
-            'form[action*="subscribe"]',
-            'form[action*="newsletter"]',
-            'form[class*="email"]',
-        ]
-        
-        for selector in email_selectors:
-            if result.get("email_offer"):
-                break
-            try:
-                elements = soup.select(selector)[:3]
-                for el in elements:
-                    text = el.get_text(separator=' ', strip=True)
-                    if text and len(text) > 10:
-                        text_lower = text.lower()
-                        # Look for email offer patterns
-                        if any(word in text_lower for word in ['%', 'off', 'discount', 'save', 'free shipping']):
-                            if any(word in text_lower for word in ['sign', 'join', 'subscribe', 'email', 'newsletter', 'first order', 'welcome']):
-                                # Extract the offer
-                                patterns = [
-                                    r'(\d+%\s*off[^.!]*)',
-                                    r'(save\s*\d+%[^.!]*)',
-                                    r'(\d+%\s*(?:discount|savings)[^.!]*)',
-                                    r'(get\s*\d+%[^.!]*)',
-                                    r'(free shipping[^.!]*)',
-                                    r'(\$\d+\s*off[^.!]*)',
-                                ]
-                                for pattern in patterns:
-                                    match = re.search(pattern, text, re.IGNORECASE)
-                                    if match:
-                                        offer = match.group(1).strip()
-                                        if 10 < len(offer) < 100:
-                                            result["email_offer"] = clean_text(offer, 80)
-                                            break
-                                if result.get("email_offer"):
-                                    break
-            except:
-                pass
-        
-        # Also check meta tags and JSON-LD for promo info
-        try:
-            # Some sites put promo info in meta description
-            meta_desc = soup.find('meta', attrs={'name': 'description'})
-            if meta_desc and meta_desc.get('content'):
-                desc = meta_desc['content']
-                if re.search(r'sign.{0,10}up.{0,20}\d+%', desc, re.IGNORECASE):
-                    match = re.search(r'(\d+%\s*off[^.]*)', desc, re.IGNORECASE)
-                    if match and not result.get("email_offer"):
-                        result["email_offer"] = clean_text(match.group(1), 80)
-        except:
-            pass
-        
-        # =================================================================
-        # NOW REMOVE SCRIPT/STYLE/NAV/FOOTER FOR MAIN PROMO SCANNING
-        # =================================================================
-        for element in soup(['script', 'style', 'noscript', 'nav', 'footer']):
-            element.decompose()
-        
-        # Remove currency/country selectors (Shopify sites have huge lists)
-        currency_selectors = [
-            '[class*="currency"]',
-            '[class*="country-selector"]',
-            '[class*="locale-selector"]',
-            '[class*="localization"]',
-            '[id*="currency"]',
-            '[id*="country"]',
-            '.disclosure',  # Shopify disclosure menus
-        ]
-        for selector in currency_selectors:
-            try:
-                for el in soup.select(selector):
-                    el.decompose()
-            except:
-                pass
-        
-        # Collect all candidate promo texts with scores
-        candidates = []
-        
-        # Priority 1: Announcement bars (most likely to have promos)
-        announcement_selectors = [
-            '[class*="announcement"]',
-            '[class*="promo-bar"]',
-            '[class*="top-bar"]',
-            '[class*="topbar"]',
-            '[class*="header-message"]',
-            '[class*="site-message"]',
-            '[class*="marquee"]',
-            '[class*="ticker"]',
-            '[id*="announcement"]',
-            '[id*="promo"]',
-            '[data-section-type="announcement"]',
-            '.announcement-bar',
-            '.promo-banner',
-        ]
-        
-        for selector in announcement_selectors:
-            try:
-                elements = soup.select(selector)[:3]
-                for el in elements:
-                    # Try to get just the text content, not nested navs
-                    for nav in el.find_all(['nav', 'ul', 'select']):
-                        nav.decompose()
-                    text = el.get_text(separator=' ', strip=True)
-                    if text and matches_promo(text) and not is_junk_text(text):
-                        score = score_promo_text(text) + 20  # Bonus for announcement bar
-                        candidates.append((text, score, 'announcement'))
-            except:
-                pass
-        
-        # Priority 2: Banner/hero sections
-        banner_selectors = [
-            '[class*="banner"]',
-            '[class*="hero"]',
-            '[class*="sale"]',
-            '[class*="offer"]',
-            '[class*="discount"]',
-            '[class*="promo"]',
-        ]
-        
-        for selector in banner_selectors:
-            try:
-                elements = soup.select(selector)[:3]
-                for el in elements:
-                    # Skip if it's a nav or has too many links
-                    if el.name == 'nav' or len(el.find_all('a')) > 5:
-                        continue
-                    text = el.get_text(separator=' ', strip=True)
-                    if text and matches_promo(text) and not is_junk_text(text):
-                        score = score_promo_text(text)
-                        candidates.append((text, score, 'banner'))
-            except:
-                pass
-        
-        # Priority 3: Look for specific promo text patterns anywhere
-        # Find elements with percentage discounts
-        all_text_elements = soup.find_all(string=re.compile(r'\d+%\s*(off|sale|discount|save)', re.IGNORECASE))
-        for text_el in all_text_elements[:10]:
-            parent = text_el.find_parent()
-            if parent:
-                text = parent.get_text(separator=' ', strip=True)
-                if text and 15 < len(text) < 200 and not is_junk_text(text):
-                    score = score_promo_text(text)
-                    candidates.append((text, score, 'text_match'))
-        
-        # Select best candidate
-        if candidates:
-            candidates.sort(key=lambda x: x[1], reverse=True)
-            best_text, best_score, source = candidates[0]
-            
-            # Only use if score is decent
-            if best_score > 10:
-                result["promo"] = clean_text(best_text)
-                code = extract_code(best_text)
-                if code:
-                    result["code"] = code
-        
-        # Fallback: Check remaining body for email offers if not found yet
-        if not result.get("email_offer"):
-            for selector in ['[class*="newsletter"]', '[class*="signup"]', '[class*="subscribe"]']:
-                try:
-                    elements = soup.select(selector)[:2]
-                    for el in elements:
-                        text = el.get_text(separator=' ', strip=True)
-                        if text and '%' in text:
-                            match = re.search(r'(\d+%\s*off[^.!]*)', text, re.IGNORECASE)
-                            if match:
-                                result["email_offer"] = clean_text(match.group(1), 80)
-                                break
-                    if result.get("email_offer"):
-                        break
-                except:
-                    pass
-                
-    except requests.exceptions.Timeout:
-        result["error"] = "timeout"
-    except requests.exceptions.RequestException as e:
-        result["error"] = str(e)[:50]
-    except Exception as e:
-        result["error"] = str(e)[:50]
-    
-    return result
-
-
-def run_scraper():
-    """Run full scrape of all brands"""
-    print(f"\n{'='*60}")
-    print(f"🔄 SKRATCH RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📡 Scanning {len(BRANDS)} brands...")
-    print(f"{'='*60}")
-    
-    results = []
-    clearance_results = []
-    impact_deals = []
-    success_count = 0
-    error_count = 0
-    
-    for i, brand in enumerate(BRANDS, 1):
-        print(f"  [{i}/{len(BRANDS)}] {brand['name']}...", end=" ", flush=True)
-        result = scrape_brand(brand)
-        
-        if result["error"]:
-            print(f"❌ {result['error'][:30]}")
-            error_count += 1
-        elif result["promo"]:
-            code_str = f" (code: {result['code']})" if result['code'] else ""
-            print(f"✓ Found promo{code_str}")
-            success_count += 1
-            results.append(result)
-        else:
-            print("○ No promo")
-            results.append(result)
-    
-    # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
-    print(f"\n{'='*60}")
-    print(f"🏷️  Scanning sale pages...")
-    print(f"{'='*60}")
-    
-    try:
-        clearance_results = scan_sale_pages(BRANDS)
-    except Exception as e:
-        print(f"⚠️  Sale page scan failed: {e}")
-        clearance_results = []
-    
-    # Fetch Impact deals
-    print(f"\n{'='*60}")
-    print(f"🔗 Fetching Impact Radius deals...")
-    print(f"{'='*60}")
-    
-    try:
-        if impact_api:
-            impact_deals = impact_api.get_all_deals()
-            print(f"✅ Found {len(impact_deals)} deals from Impact")
-        else:
-            print("⚠️  Impact API not available")
-    except Exception as e:
-        print(f"⚠️  Impact deals fetch failed: {e}")
-        impact_deals = []
-    
-    print(f"\n{'='*60}")
-    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {error_count} errors")
-    print(f"{'='*60}\n")
-    
-    # Always save main results even if clearance/impact fails
-    if results:
-        save_data(results, clearance_results, impact_deals)
-    
-    return results
-
-
-def get_sale_urls(base_url):
-    """Generate possible sale page URLs from a base URL"""
-    parsed = urlparse(base_url)
-    base = f"{parsed.scheme}://{parsed.netloc}"
-    
-    # Common sale page patterns
-    patterns = [
-        '/collections/sale',
-        '/sale',
-        '/clearance',
-        '/collections/clearance',
-        '/outlet',
-        '/collections/outlet',
-        '/markdown',
-        '/collections/markdown',
-        '/last-chance',
-        '/collections/last-chance',
-        '/final-sale',
-        '/collections/final-sale',
-    ]
-    
-    return [base + p for p in patterns]
-
-
-def scrape_sale_page(brand, sale_url):
-    """Scrape a sale page for banner/headline text"""
-    try:
-        response = requests.get(sale_url, headers=HEADERS, timeout=10, allow_redirects=True)
-        
-        # Check if page exists (not 404, not redirect to homepage)
-        if response.status_code != 200:
-            return None
-        
-        # Check if we got redirected to homepage (common for non-existent sale pages)
-        final_url = response.url
-        original_parsed = urlparse(sale_url)
-        final_parsed = urlparse(final_url)
-        
-        # If redirected to root or very different page, skip
-        if final_parsed.path in ['/', ''] and original_parsed.path not in ['/', '']:
-            return None
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Look for sale banners/headlines
-        sale_selectors = [
-            '[class*="collection-header"] h1',
-            '[class*="collection-title"]',
-            '[class*="page-title"]',
-            '[class*="hero"] h1',
-            '[class*="hero"] h2',
-            '[class*="banner"] h1',
-            '[class*="banner"] h2',
-            '[class*="sale"] h1',
-            '[class*="sale"] h2',
-            'h1[class*="title"]',
-            '.collection-hero__title',
-            '.page-header h1',
-            'main h1',
-        ]
-        
-        promo_text = None
-        
-        for selector in sale_selectors:
-            try:
-                el = soup.select_one(selector)
-                if el:
-                    text = el.get_text(strip=True)
-                    if text and len(text) > 3 and len(text) < 150:
-                        # Skip generic titles
-                        if text.lower() not in ['sale', 'shop', 'products', 'all', 'collection']:
-                            promo_text = text
-                            break
-            except:
-                pass
-        
-        # Also look for discount text in the page
-        if not promo_text or 'sale' in promo_text.lower() and '%' not in promo_text:
-            discount_patterns = [
-                r'up to (\d+)% off',
-                r'save (\d+)%',
-                r'(\d+)% off',
-            ]
-            page_text = soup.get_text()
-            for pattern in discount_patterns:
-                match = re.search(pattern, page_text, re.IGNORECASE)
-                if match:
-                    pct = int(match.group(1))
-                    # Sanity check - ignore absurd percentages
-                    if pct > 0 and pct <= 90:
-                        if promo_text:
-                            promo_text = f"{promo_text} - Up to {pct}% off"
-                        else:
-                            promo_text = f"Up to {pct}% off"
-                        break
-        
-        if promo_text:
-            # Clean up ugly prefixes
-            promo_text = re.sub(r'^Collection[:\s]*', '', promo_text, flags=re.IGNORECASE)
-            promo_text = re.sub(r'^Sale[:\s]*Collection[:\s]*', 'Sale - ', promo_text, flags=re.IGNORECASE)
-            promo_text = promo_text.strip(' -:')
-            
-            # Extract discount percentage if present
-            discount_match = re.search(r'(\d+)%', promo_text)
-            discount = None
-            if discount_match:
-                pct = int(discount_match.group(1))
-                # Only use if reasonable (1-90%)
-                if 0 < pct <= 90:
-                    discount = pct
-            
-            return {
-                "brand": brand["name"],
-                "url": sale_url,
-                "affiliate_url": brand.get("affiliate_url"),
-                "category": brand.get("category", "apparel"),
-                "promo": clean_text(promo_text, 100),
-                "discount": discount,
-                "type": "clearance"
-            }
-            
-    except:
-        pass
-    
-    return None
-
-
-def scan_sale_pages(brands):
-    """Scan sale pages for all brands"""
-    clearance = []
-    
-    # Skip these for sale page scanning - too noisy or structured differently
-    skip_domains = ['amazon.com', 'golf.com/gear', 'dickssportinggoods.com', 'pgatoursuperstore.com', 'golfgalaxy.com']
-    
-    for brand in brands:
-        # Skip big retailers
-        if any(domain in brand["url"] for domain in skip_domains):
-            continue
-            
-        sale_urls = get_sale_urls(brand["url"])
-        
-        for sale_url in sale_urls[:3]:  # Only check first 3 patterns per brand
-            result = scrape_sale_page(brand, sale_url)
-            if result:
-                print(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
-                clearance.append(result)
-                break  # Found one, move to next brand
-    
-    return clearance
-
-
-def save_data(promos, clearance=None, impact_deals=None):
-    """Save scraped data to file with freshness tracking"""
-    active_promos = [p for p in promos if p.get("promo")]
-    
-    # Load deal history
-    history = load_deal_history()
-    
-    # Update history and get fresh promos
-    history, fresh_promos = update_deal_history(active_promos, history)
-    
-    # Also process clearance deals
-    fresh_clearance = []
-    if clearance:
-        history, fresh_clearance = update_deal_history(clearance, history)
-    
-    # Also process impact deals
-    fresh_impact = []
-    if impact_deals:
-        history, fresh_impact = update_deal_history(impact_deals, history)
-    
-    # Save updated history
-    save_deal_history(history)
-    
-    # Get current critical hit index and increment
-    current_data = load_data()
-    critical_hit_index = current_data.get("criticalHitIndex", 0) + 1
-    
-    # Count new deals
-    new_promos = sum(1 for p in fresh_promos if p.get("is_new"))
-    new_clearance = sum(1 for c in fresh_clearance if c.get("is_new"))
-    new_impact = sum(1 for d in fresh_impact if d.get("is_new"))
-    
-    data = {
-        "lastUpdated": datetime.now().isoformat(),
-        "criticalHitIndex": critical_hit_index,
-        "promos": fresh_promos,
-        "codes": [
-            {
-                "brand": p["brand"], 
-                "code": p["code"], 
-                "discount": p["promo"][:60], 
-                "url": p.get("url"), 
-                "affiliate_url": p.get("affiliate_url"),
-                "is_new": p.get("is_new", False),
-                "first_seen": p.get("first_seen"),
-                "expires": p.get("expires")
-            }
-            for p in fresh_promos if p.get("code")
-        ],
-        "emailOffers": [
-            {
-                "brand": p["brand"], 
-                "offer": p["email_offer"], 
-                "method": "Website", 
-                "url": p.get("url"), 
-                "affiliate_url": p.get("affiliate_url")
-            }
-            for p in promos if p.get("email_offer")
-        ],
-        "clearance": fresh_clearance,
-        "impactDeals": fresh_impact
-    }
-    
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-    
-    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new)")
-
-
-def load_data():
-    """Load data from file or return defaults"""
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE) as f:
-                data = json.load(f)
-                # Ensure keys exist (for backward compatibility)
-                if "impactDeals" not in data:
-                    data["impactDeals"] = []
-                if "criticalHitIndex" not in data:
-                    data["criticalHitIndex"] = 0
-                return data
-        except:
-            pass
-    
-    return {
-        "lastUpdated": datetime.now().isoformat(),
-        "criticalHitIndex": 0,
-        "promos": [],
-        "codes": [],
-        "emailOffers": [],
-        "clearance": [],
-        "impactDeals": []
-    }
-
-
-# =============================================================================
-# FLASK APP
-# =============================================================================
-app = Flask(__name__, static_folder='.')
-app.secret_key = os.environ.get("SECRET_KEY", "skratch-radar-secret-key-change-me")
-CORS(app)
-
-@app.route('/')
-def index():
-    return send_from_directory('.', 'golf_promo_radar.html')
-
-
-@app.route('/widget')
-def widget():
-    return send_from_directory('.', 'widget.html')
-
-@app.route('/api/promos')
-def get_promos():
-    return jsonify(load_data())
-
-@app.route('/api/refresh', methods=['POST'])
-def trigger_refresh():
-    thread = threading.Thread(target=run_scraper)
-    thread.start()
-    return jsonify({"status": "refresh_started", "brand_count": len(BRANDS)})
-
-@app.route('/api/status')
-def status():
-    return jsonify({
-        "status": "ok",
-        "data_file_exists": os.path.exists(DATA_FILE),
-        "brand_count": len(BRANDS),
-        "refresh_interval_minutes": REFRESH_INTERVAL_MINUTES
-    })
-
-
-# =============================================================================
-# EMBED WIDGET
-# =============================================================================
-@app.route('/embed.js')
-def embed_js():
-    """Embeddable widget script for Skratch/GolfWRX articles"""
-    js = '''
-(function() {
-    const container = document.getElementById('skratch-radar-widget');
-    if (!container) return;
-    
-    const style = document.createElement('style');
-    style.textContent = `
-        .sr-widget { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 8px; padding: 16px; max-width: 400px; }
-        .sr-widget * { box-sizing: border-box; }
-        .sr-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #1a1a1a; }
-        .sr-logo { width: 24px; height: 24px; background: #00ff41; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-        .sr-logo svg { width: 14px; height: 14px; }
-        .sr-title { color: #fff; font-weight: 700; font-size: 14px; }
-        .sr-live { color: #00ff41; font-size: 10px; font-weight: 600; margin-left: auto; }
-        .sr-deal { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1a1a1a; text-decoration: none; }
-        .sr-deal:last-child { border-bottom: none; }
-        .sr-deal:hover .sr-brand { color: #00ff41; }
-        .sr-badge { background: #00ff41; color: #000; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 3px; }
-        .sr-info { flex: 1; min-width: 0; }
-        .sr-brand { color: #fff; font-weight: 600; font-size: 13px; transition: color 0.2s; }
-        .sr-promo { color: #888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sr-cta { text-align: center; margin-top: 12px; }
-        .sr-cta a { color: #00ff41; font-size: 12px; text-decoration: none; font-weight: 600; }
-        .sr-cta a:hover { text-decoration: underline; }
-    `;
-    document.head.appendChild(style);
-    
-    fetch('WIDGET_URL/api/promos')
-        .then(r => r.json())
-        .then(data => {
-            const deals = (data.promos || [])
-                .filter(p => p.promo && p.promo.match(/\\d+%/))
-                .sort((a, b) => {
-                    const aDiscount = parseInt(a.promo.match(/(\\d+)%/)?.[1] || 0);
-                    const bDiscount = parseInt(b.promo.match(/(\\d+)%/)?.[1] || 0);
-                    return bDiscount - aDiscount;
-                })
-                .slice(0, 5);
-            
-            container.innerHTML = `
-                <div class="sr-widget">
-                    <div class="sr-header">
-                        <div class="sr-logo"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="12"/></svg></div>
-                        <span class="sr-title">GOLF DEALS RADAR</span>
-                        <span class="sr-live">● LIVE</span>
-                    </div>
-                    ${deals.map(d => {
-                        const discount = d.promo.match(/(\\d+)%/)?.[1] || '';
-                        const link = d.affiliate_url || d.url;
-                        return `<a href="${link}" target="_blank" rel="noopener" class="sr-deal">
-                            <span class="sr-badge">${discount}%</span>
-                            <div class="sr-info">
-                                <div class="sr-brand">${d.brand}</div>
-                                <div class="sr-promo">${d.promo}</div>
-                            </div>
-                        </a>`;
-                    }).join('')}
-                    <div class="sr-cta"><a href="WIDGET_URL" target="_blank">View All Deals →</a></div>
-                </div>
-            `;
-        })
-        .catch(e => console.error('Radar widget error:', e));
-})();
-'''
-    # Replace WIDGET_URL with actual URL
-    base_url = request.url_root.rstrip('/')
-    js = js.replace('WIDGET_URL', base_url)
-    
-    return Response(js, mimetype='application/javascript')
-
-
-@app.route('/embed')
-def embed_demo():
-    """Demo page showing how to embed the widget"""
-    base_url = request.url_root.rstrip('/')
-    return f'''<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>Skratch Radar - Embed Widget</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOLF PROMO RADAR // SKRATCH EDITION</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        radar: {
+                            black: '#050505',
+                            dark: '#0a0a0a',
+                            grid: '#1a1a1a',
+                            green: '#00ff41',
+                            greenDim: 'rgba(0, 255, 65, 0.2)',
+                            red: '#ff3333',
+                            orange: '#ff9500',
+                            white: '#e5e5e5'
+                        }
+                    },
+                    fontFamily: {
+                        loud: ['Teko', 'sans-serif'],
+                        tech: ['Share Tech Mono', 'monospace'],
+                    },
+                    animation: {
+                        'spin-slow': 'spin 4s linear infinite',
+                        'ping-slow': 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite',
+                        'scan': 'scan 4s linear infinite',
+                        'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        scan: {
+                            '0%': { transform: 'translateY(-100%)' },
+                            '100%': { transform: 'translateY(100%)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
-        body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }}
-        h1 {{ color: #333; }}
-        pre {{ background: #1a1a1a; color: #00ff41; padding: 20px; border-radius: 8px; overflow-x: auto; }}
-        .demo {{ margin: 40px 0; padding: 40px; background: #fff; border-radius: 8px; }}
+        body {
+            background-color: #050505;
+            color: #e5e5e5;
+            overflow-x: hidden;
+            background-image: 
+                linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .radar-sweep {
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(0, 255, 65, 0.1) 200deg, rgba(0, 255, 65, 0.8) 360deg);
+            border-radius: 50%;
+        }
+
+        .crt-overlay {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .glitch-text:hover {
+            text-shadow: 2px 0 #ff3333, -2px 0 #00ff41;
+        }
+
+        .blip {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: #00ff41;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #00ff41;
+            opacity: 0;
+            animation: blipAnim 4s infinite;
+        }
+
+        @keyframes blipAnim {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            45% { opacity: 0; }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+        }
+        
+        /* Target Lock Corners */
+        .target-corner {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-color: #00ff41;
+            border-style: solid;
+            transition: all 0.3s ease;
+            opacity: 0;
+        }
+        .group:hover .target-corner {
+            opacity: 1;
+            width: 20px;
+            height: 20px;
+        }
+        .tl { top: 0; left: 0; border-width: 2px 0 0 2px; }
+        .tr { top: 0; right: 0; border-width: 2px 2px 0 0; }
+        .bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+        .br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+        .lock-status {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+        .group:hover .lock-status {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #1a1a1a; border: 1px solid #00ff41; }
+
+        /* New code highlight - pulsing red/orange border */
+        .new-code-highlight {
+            animation: newCodePulse 1s ease-in-out infinite;
+            border-color: #ff3333 !important;
+        }
+
+        @keyframes newCodePulse {
+            0%, 100% { 
+                box-shadow: 0 0 20px rgba(255, 51, 51, 0.4);
+                border-color: #ff3333;
+            }
+            50% { 
+                box-shadow: 0 0 40px rgba(255, 149, 0, 0.6);
+                border-color: #ff9500;
+            }
+        }
+
+        /* Code copy button */
+        .code-copy {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .code-copy:hover {
+            background: #00ff41;
+            color: black;
+        }
+        .code-copy.copied {
+            background: #00ff41;
+            color: black;
+        }
+
+        /* Deal card as link */
+        a.deal-card {
+            text-decoration: none;
+        }
+
+        /* Scanning state */
+        .scanning .radar-sweep {
+            animation-duration: 1s;
+        }
+
+        /* Marquee continuous scroll */
+        .marquee-track {
+            animation: marqueeScroll 20s linear infinite;
+        }
+        
+        .marquee-track a {
+            cursor: pointer;
+        }
+
+        @keyframes marqueeScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
     </style>
 </head>
-<body>
-    <h1>Embed Golf Deals Radar</h1>
-    <p>Add this widget to any Skratch or GolfWRX article:</p>
-    
-    <pre>&lt;div id="skratch-radar-widget"&gt;&lt;/div&gt;
-&lt;script src="{base_url}/embed.js"&gt;&lt;/script&gt;</pre>
-    
-    <h2>Live Preview:</h2>
-    <div class="demo">
-        <div id="skratch-radar-widget"></div>
-        <script src="{base_url}/embed.js"></script>
+<body class="font-tech min-h-screen flex flex-col relative">
+
+    <!-- CRT Effect Overlay -->
+    <div class="crt-overlay fixed inset-0 z-50 h-full w-full"></div>
+
+    <!-- Incoming Transmission Popup -->
+    <div id="transmission-popup" class="fixed top-20 left-1/2 -translate-x-1/2 bg-radar-dark border-2 border-radar-red px-8 py-4 z-[100] shadow-[0_0_30px_rgba(255,51,51,0.3)] transition-all duration-500 opacity-0 -translate-y-10 pointer-events-none">
+        <button onclick="dismissTransmission()" class="absolute top-2 right-2 text-gray-600 hover:text-white text-xl">&times;</button>
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-radar-red/20 rounded-full flex items-center justify-center animate-pulse">
+                <i class="fas fa-satellite-dish text-radar-red text-2xl"></i>
+            </div>
+            <div>
+                <div class="text-radar-red font-loud text-xl tracking-widest animate-pulse">
+                    ⚡ INCOMING TRANSMISSION
+                </div>
+                <div id="transmission-brand" class="text-white font-loud text-2xl">
+                    BRAND NAME
+                </div>
+                <div id="transmission-detail" class="text-radar-green font-bold tracking-widest font-mono">
+                    DEAL DETAILS
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Navigation / Header -->
+    <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden">
+                    <div class="absolute inset-0 radar-sweep animate-spin-slow"></div>
+                    <i class="fas fa-crosshairs text-radar-green relative z-10 text-sm"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <!-- Skratch Logo -->
+                        <svg width="100" height="50" viewBox="0 0 126 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-8 w-auto">
+                            <g clip-path="url(#clip0_86_699)">
+                            <path d="M107.845 37.0542V54.4735C109.687 53.5255 111.412 52.5201 113.01 51.4643V39.8802C111.31 38.8819 109.588 37.9411 107.845 37.0542Z" fill="white"/>
+                            <path d="M48.8327 12.0687C48.8327 11.3756 48.6347 10.8442 48.2388 10.4707C47.8429 10.0973 47.2915 9.968 46.5916 10.0865C45.7362 10.2337 44.8808 10.3881 44.0254 10.5569C44.0254 15.9863 44.0254 21.4157 44.0254 26.8415C45.2166 26.5147 46.1639 26.1054 46.8532 25.5847C47.5566 25.0568 48.0621 24.3853 48.3696 23.5594C48.6771 22.7335 48.8327 21.6958 48.8327 20.439C48.8327 17.6489 48.8327 14.8588 48.8327 12.0651V12.0687Z" fill="white"/>
+                            <path d="M126 32.0018C126 14.3276 97.7926 0 63 0C28.2074 0 0 14.3276 0 32.0018C0 38.214 3.48174 44.0096 9.51204 48.9184C10.7386 48.1284 11.9793 47.3671 13.2306 46.6346V51.6259C14.5102 52.4625 15.8675 53.2633 17.3026 54.0318C17.4829 53.5506 17.5713 53.0407 17.5713 52.4949V48.9794C17.5713 47.5969 17.2461 46.3365 16.5992 45.209C15.9524 44.0851 15.0263 42.857 13.828 41.5535V41.4889C13.7467 41.4494 13.7078 41.3847 13.7078 41.2985C12.3116 39.7688 11.2688 38.3899 10.5619 37.1224C9.85491 35.8584 9.50497 34.343 9.50497 32.5691V26.5329C9.50497 24.4574 9.99983 22.5399 11.0037 20.8162C12.0076 19.0926 13.4604 17.6599 15.3868 16.5934C17.3168 15.5305 18.8191 15.333 19.8618 15.9255C20.9081 16.5216 21.4348 17.8717 21.4348 19.9473V30.0735C20.134 30.6804 18.8473 31.3123 17.5678 31.9767V22.784C17.5678 22.0048 17.3839 21.4734 17.0199 21.1897C16.6558 20.906 16.1079 20.9599 15.3868 21.3585C14.6622 21.7571 14.1249 22.3065 13.7643 22.9851C13.4038 23.6674 13.2271 24.3999 13.2271 25.1791V30.2818C13.2271 31.5817 13.5063 32.7271 14.0648 33.7254C14.6233 34.7273 15.5035 35.9482 16.7159 37.4204C16.7972 37.5281 16.8785 37.6359 16.9598 37.7472C18.3772 39.3343 19.4836 40.8605 20.2612 42.2789C21.0389 43.7008 21.4348 45.306 21.4348 47.0798V51.1052C21.4348 52.757 21.1025 54.2508 20.438 55.6046C31.6467 60.8221 46.5881 64.0108 62.9929 64.0108C79.3978 64.0108 92.9429 61.1165 103.957 56.3227V13.7817C105.262 14.3742 106.555 14.9955 107.838 15.649V33.0144C109.581 33.8978 111.302 34.8314 113.003 35.8225V18.4678C114.254 19.2004 115.498 19.9616 116.725 20.7552V48.7173C122.603 43.8516 125.993 38.1278 125.993 32.0018H126ZM37.5003 51.0226C36.1606 51.3817 34.8244 51.7731 33.4954 52.1896C31.7598 45.4496 30.0384 38.7634 28.3276 32.1203V53.9743C26.9985 54.477 25.6765 55.0085 24.3616 55.5686V12.8625C25.6765 12.3023 26.9985 11.7709 28.3276 11.2681V31.0969C30.0384 23.8433 31.7633 16.6365 33.4954 9.48348C34.8244 9.06694 36.157 8.67553 37.5003 8.31644C35.6198 15.5951 33.7499 22.9277 31.8941 30.3213C33.7499 37.1655 35.6198 44.0671 37.5003 51.0262V51.0226ZM49.8047 48.5413C48.2777 42.4153 46.7578 36.3252 45.2378 30.271C44.849 30.411 44.4461 30.5475 44.0254 30.6768C44.0254 36.9536 44.0254 43.2304 44.0254 49.5073C42.6469 49.7802 41.2718 50.0818 39.9039 50.4122V7.69882C41.2506 7.37205 42.6044 7.074 43.9583 6.80828C43.9583 6.80828 43.9759 6.80469 43.9865 6.8011C44.0007 6.8011 44.0113 6.79751 44.0254 6.79392C44.902 6.62156 45.7787 6.45997 46.6553 6.31274C48.6312 5.97879 50.1865 6.3271 51.3141 7.29305C52.4417 8.26258 53.0037 9.79947 53.0037 11.875V19.5989C53.0037 21.6781 52.6608 23.4304 51.9751 24.8703C51.2893 26.3139 50.2855 27.4809 48.9635 28.4073C48.9069 28.4468 48.8504 28.4827 48.7938 28.5222C50.4481 35.0002 52.1023 41.5176 53.7637 48.0817C52.4417 48.2074 51.1197 48.3618 49.8012 48.5413H49.8047ZM66.9801 47.7118C66.662 44.3256 66.3403 40.9395 66.0222 37.5533C64.071 37.4958 62.1163 37.4958 60.1651 37.5533C59.847 40.9395 59.5253 44.3256 59.2072 47.7118C57.811 47.7657 56.4112 47.8519 55.0185 47.9668C56.5773 33.6033 58.1362 19.2758 59.6985 4.98412C61.9396 4.90512 64.1806 4.90512 66.4217 4.98053C68.0052 19.2686 69.5888 33.5961 71.1688 47.9632C69.7726 47.8483 68.3764 47.7657 66.9801 47.7082V47.7118ZM84.5196 11.2681C82.876 10.9019 81.2217 10.5823 79.5674 10.3022C79.5674 23.2078 79.5674 36.1133 79.5674 49.0225C78.2065 48.7927 76.8421 48.5916 75.4742 48.4192C75.4742 35.5137 75.4742 22.6081 75.4742 9.69893C73.7633 9.48348 72.049 9.31111 70.3311 9.18543V5.19598C75.0924 5.5443 79.8361 6.24092 84.5231 7.28228V11.2717L84.5196 11.2681ZM99.5317 28.77C98.2097 28.2457 96.8771 27.7502 95.5375 27.2834V16.0548C95.5375 15.2755 95.336 14.5897 94.9295 13.9972C94.523 13.4047 93.9397 12.981 93.1692 12.7332C92.441 12.4998 91.8719 12.5537 91.4654 12.8876C91.0554 13.218 90.8539 13.7782 90.8539 14.5538V45.9703C90.8539 46.7495 91.0589 47.4246 91.4654 48.0027C91.8719 48.5808 92.441 48.9794 93.1692 49.2128C93.9397 49.4606 94.5265 49.4283 94.9295 49.1123C95.3324 48.7963 95.5375 48.2505 95.5375 47.4712V38.1242C96.8771 38.591 98.2097 39.0866 99.5317 39.6108V48.8286C99.5317 50.9077 98.998 52.2794 97.9199 52.976C96.8418 53.6727 95.2653 53.6475 93.1692 52.976C91.1155 52.3189 89.5284 51.3314 88.4255 49.9346C87.3227 48.5413 86.7677 46.8177 86.7677 44.7386V13.5807C86.7677 11.5051 87.3227 10.0472 88.4255 9.23571C89.5284 8.42776 91.1155 8.31285 93.1692 8.96639C95.2653 9.63788 96.8453 10.769 97.9199 12.2772C98.9944 13.7889 99.5317 15.5951 99.5317 17.6706V28.77Z" fill="white"/>
+                            <path d="M60.5292 33.7182C62.2401 33.6715 63.9509 33.6715 65.6617 33.7182C64.8063 24.6476 63.9509 15.5879 63.0955 6.54248C62.2401 15.5915 61.3846 24.6512 60.5292 33.7217V33.7182Z" fill="white"/>
+                            </g>
+                            <defs>
+                            <clipPath id="clip0_86_699">
+                            <rect width="126" height="64" fill="white"/>
+                            </clipPath>
+                            </defs>
+                        </svg>
+                        <span class="font-loud text-3xl font-bold tracking-widest text-radar-green">RADAR</span>
+                    </div>
+                    <div class="text-[10px] text-radar-green tracking-[0.3em] uppercase opacity-80 flex items-center gap-2">
+                        <span id="feed-status">LIVE INTEL</span>
+                        <span class="w-1 h-1 bg-radar-green rounded-full animate-pulse"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <!-- Zulu Time Clock -->
+                <div class="hidden md:block text-right">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Zulu Time</div>
+                    <div id="zulu-clock" class="text-white font-mono text-lg leading-none">00:00:00</div>
+                </div>
+
+                <!-- Refresh Button -->
+                <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                    <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
+                    <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
+                        <i class="fas fa-sync-alt" id="scan-icon"></i>
+                        Scan
+                    </span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
+        
+        <!-- Left Column: Radar Visual & Filters -->
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            
+            <!-- Radar Visualization Panel -->
+            <div id="radar-panel" class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
+                <div class="absolute top-2 left-2 text-xs text-radar-greenDim">SYS.MONITORING</div>
+                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE</div>
+                
+                <!-- The Radar Circle -->
+                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(0,255,65,0.1)]" id="radar-circle">
+                    <!-- Grid Rings -->
+                    <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75"></div>
+                    <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50"></div>
+                    <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-25"></div>
+                    
+                    <!-- Crosshairs -->
+                    <div class="absolute top-1/2 left-0 w-full h-[1px] bg-radar-greenDim"></div>
+                    <div class="absolute left-1/2 top-0 h-full w-[1px] bg-radar-greenDim"></div>
+
+                    <!-- The Sweep -->
+                    <div class="absolute inset-0 radar-sweep animate-spin-slow origin-center"></div>
+                    
+                    <!-- Dynamic Blips Container -->
+                    <div id="blips-container"></div>
+                </div>
+
+                <div class="text-center font-loud text-2xl tracking-widest text-radar-green mt-2">
+                    <span id="target-count">000</span> TARGETS ACQUIRED
+                </div>
+
+                <!-- Legend -->
+                <div class="mt-4 pt-3 border-t border-radar-grid text-[10px] text-gray-600 space-y-1">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 border border-radar-green bg-radar-green/20"></span>
+                        <span>GREEN FLASH = Has active promo code</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 border border-radar-red bg-radar-red/20 animate-pulse"></span>
+                        <span>RED PULSE = New code just detected</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats HUD -->
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Promos</div>
+                    <div class="font-loud text-3xl text-white" id="stat-promos">0</div>
+                </div>
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Codes</div>
+                    <div class="font-loud text-3xl text-radar-green" id="stat-codes">0</div>
+                </div>
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</div>
+                    <div class="font-loud text-3xl text-radar-orange" id="stat-email">0</div>
+                </div>
+            </div>
+
+            <!-- Search -->
+            <div class="relative">
+                <input type="text" id="search-input" placeholder="SEARCH TARGETS..." 
+                    class="w-full bg-radar-dark border border-radar-grid px-4 py-3 text-white placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors"
+                    oninput="handleSearch(this.value)">
+                <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-gray-600"></i>
+            </div>
+
+            <!-- Categories -->
+            <div class="bg-radar-dark border border-radar-grid p-4 rounded-sm">
+                <h3 class="font-loud text-xl text-white mb-4 border-b border-radar-grid pb-2">FILTER PROTOCOL</h3>
+                <div class="space-y-2" id="filter-buttons">
+                    <button data-filter="all" class="filter-btn w-full text-left px-4 py-2 bg-radar-green/10 text-radar-green border-l-2 border-radar-green hover:bg-radar-green/20 transition-all font-bold">
+                        <i class="fas fa-globe-americas w-6"></i> ALL SECTORS
+                    </button>
+                    <button data-filter="apparel" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-tshirt w-6"></i> APPAREL
+                    </button>
+                    <button data-filter="footwear" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-shoe-prints w-6"></i> FOOTWEAR
+                    </button>
+                    <button data-filter="retailer" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-shopping-bag w-6"></i> RETAILERS
+                    </button>
+                    <button data-filter="oem" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-golf-ball w-6"></i> OEM HARDWARE
+                    </button>
+                    <button data-filter="bags" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-suitcase w-6"></i> BAGS & ACCESSORIES
+                    </button>
+                    <button data-filter="womens" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-venus w-6"></i> WOMEN'S
+                    </button>
+                </div>
+            </div>
+
+            <!-- System Log -->
+            <div class="font-mono text-[10px] text-gray-600 space-y-1 h-32 overflow-hidden border-t border-radar-grid pt-2 opacity-50" id="system-log">
+                <div>> INITIATING SEQUENCE... OK</div>
+                <div>> CONNECTING TO SERVER... OK</div>
+                <div>> AWAITING DATA STREAM...</div>
+            </div>
+        </aside>
+
+        <!-- Right Column: Deal Feed -->
+        <section class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- Feed Header -->
+            <div class="flex justify-between items-end border-b-2 border-radar-green pb-2 mb-2">
+                <h2 class="font-loud text-4xl text-white">INCOMING TRANSMISSIONS</h2>
+                <div class="flex gap-4 items-center">
+                    <span class="text-xs text-radar-green animate-pulse" id="last-update">AWAITING SIGNAL...</span>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-2 flex-wrap">
+                <button onclick="switchTab('promos')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-radar-green text-radar-green" data-tab="promos">
+                    PROMOS
+                </button>
+                <button onclick="switchTab('codes')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="codes">
+                    CODES
+                </button>
+                <button onclick="switchTab('clearance')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="clearance">
+                    CLEARANCE
+                </button>
+                <button onclick="switchTab('impact')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="impact">
+                    <i class="fas fa-handshake mr-1"></i>PARTNER DEALS
+                </button>
+                <button onclick="switchTab('email')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="email">
+                    EMAIL OFFERS
+                </button>
+            </div>
+
+            <!-- Featured Deal (Hot) - Will be populated dynamically -->
+            <div id="featured-deal" class="hidden"></div>
+
+            <!-- Tactical Nukes Section -->
+            <div class="mb-8">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 bg-radar-red rounded-sm flex items-center justify-center">
+                        <i class="fas fa-radiation text-black"></i>
+                    </div>
+                    <h3 class="font-loud text-2xl text-white tracking-wider">TACTICAL NUKES</h3>
+                    <div class="flex-1 h-px bg-radar-grid"></div>
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <!-- Pick 1: SSC x Pluto Rain Jacket -->
+                    <a href="https://www.sugarloafsocialclub.com/products/ssc-x-pluto-rain-jacket" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
+                        <div class="aspect-square bg-gray-900 relative overflow-hidden">
+                            <img src="https://www.sugarloafsocialclub.com/cdn/shop/files/SSCPLUTOJCKT-2-NVY_1copy.jpg?width=400" alt="SSC x Pluto Space Jacket" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                            <div class="absolute top-2 left-2 bg-radar-orange text-black text-[10px] font-bold px-1.5 py-0.5">COLLAB</div>
+                        </div>
+                        <div class="p-3">
+                            <div class="text-[10px] text-radar-green uppercase tracking-wider mb-1">Sugarloaf Social Club</div>
+                            <div class="text-white text-sm font-loud leading-tight mb-2">SSC x Pluto Space Jacket</div>
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="text-gray-500 line-through text-xs mr-1">$170</span>
+                                    <span class="text-radar-green font-bold">$70</span>
+                                </div>
+                                <i class="fas fa-arrow-right text-xs text-gray-600 group-hover:text-radar-green group-hover:translate-x-1 transition-all"></i>
+                            </div>
+                        </div>
+                    </a>
+                    
+                    <!-- Pick 2: B. Draddy Archive Packs -->
+                    <a href="https://bdraddy.com/products/draddy-cotton-sport-championship-archive-packs" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
+                        <div class="aspect-square bg-gray-900 relative overflow-hidden">
+                            <img src="https://bdraddy.com/cdn/shop/files/archivebd.jpg?width=400" alt="B. Draddy Archive Packs" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                            <div class="absolute top-2 left-2 bg-radar-green text-black text-[10px] font-bold px-1.5 py-0.5">VALUE</div>
+                        </div>
+                        <div class="p-3">
+                            <div class="text-[10px] text-radar-green uppercase tracking-wider mb-1">B. Draddy</div>
+                            <div class="text-white text-sm font-loud leading-tight mb-2">Championship Archive 3-Pack</div>
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="text-gray-500 line-through text-xs mr-1">$300</span>
+                                    <span class="text-radar-green font-bold">$100</span>
+                                </div>
+                                <i class="fas fa-arrow-right text-xs text-gray-600 group-hover:text-radar-green group-hover:translate-x-1 transition-all"></i>
+                            </div>
+                        </div>
+                    </a>
+                    
+                    <!-- Pick 3: TaylorMade Qi35 Max Lite -->
+                    <a href="https://www.taylormadegolf.com/Qi35-Max-Lite-Driver/DW-TC377.html?lang=en_US" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
+                        <div class="aspect-square bg-gray-900 relative overflow-hidden">
+                            <img src="https://www.tgw.com/wcsstore/CatalogAssetStore/Attachment/images/products/golf/P199911/1-f.jpg" alt="TaylorMade Qi35 Max Lite Driver" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                            <div class="absolute top-2 left-2 bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5">NEW</div>
+                        </div>
+                        <div class="p-3">
+                            <div class="text-[10px] text-radar-green uppercase tracking-wider mb-1">TaylorMade</div>
+                            <div class="text-white text-sm font-loud leading-tight mb-2">Qi35 Max Lite Driver</div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-radar-green font-bold">$599.99</span>
+                                <i class="fas fa-arrow-right text-xs text-gray-600 group-hover:text-radar-green group-hover:translate-x-1 transition-all"></i>
+                            </div>
+                        </div>
+                    </a>
+                    
+                    <!-- Pick 4: Greyson Wainscott Short -->
+                    <a href="https://greysonclothiers.com/products/wainscott-short" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
+                        <div class="aspect-square bg-gray-900 relative overflow-hidden">
+                            <img src="https://greysonclothiers.com/cdn/shop/files/MFA22B68_262_1_499d851b-90ef-47c7-9f66-7b4e4933953a.png?width=400" alt="Greyson Wainscott Short" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                            <div class="absolute top-2 left-2 bg-radar-green text-black text-[10px] font-bold px-1.5 py-0.5">40% OFF</div>
+                        </div>
+                        <div class="p-3">
+                            <div class="text-[10px] text-radar-green uppercase tracking-wider mb-1">Greyson</div>
+                            <div class="text-white text-sm font-loud leading-tight mb-2">Wainscott Short</div>
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <span class="text-gray-500 line-through text-xs mr-1">$145</span>
+                                    <span class="text-radar-green font-bold">$87</span>
+                                </div>
+                                <i class="fas fa-arrow-right text-xs text-gray-600 group-hover:text-radar-green group-hover:translate-x-1 transition-all"></i>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Deals Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
+                <!-- Loading state -->
+                <div class="col-span-2 text-center py-20 text-gray-600">
+                    <i class="fas fa-satellite-dish text-4xl mb-4 animate-pulse"></i>
+                    <div class="font-loud text-2xl">SCANNING FREQUENCIES...</div>
+                </div>
+            </div>
+
+            <!-- Loader / Scanner Line -->
+            <div class="w-full h-1 bg-gray-900 mt-4 overflow-hidden rounded-full">
+                <div class="h-full bg-radar-green w-1/3 animate-[scan_2s_ease-in-out_infinite]"></div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Intel Marquee - Fixed at bottom -->
+    <div class="fixed bottom-0 left-0 right-0 bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black z-[60]">
+        <div class="marquee-track flex" id="marquee-track">
+            <div class="marquee-content flex-shrink-0 px-4" id="marquee-text">
+                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+            </div>
+            <div class="marquee-content flex-shrink-0 px-4" id="marquee-text-2">
+                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-radar-black py-8 pb-16 relative z-10">
+        <div class="container mx-auto px-4 text-center">
+            <div class="font-loud text-2xl text-white mb-2 tracking-widest">
+                GOLF PROMO <span class="text-radar-green">RADAR</span>
+            </div>
+            <p class="text-gray-600 text-xs font-mono uppercase tracking-widest">
+                Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins • Skratch Golf Aesthetics
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // =================================================================
+        // STATE
+        // =================================================================
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [] };
+        let currentFilter = 'all';
+        let currentTab = 'promos';
+        let searchQuery = '';
+        let seenDeals = JSON.parse(localStorage.getItem('seenDeals') || '{}');
+        let transmissionQueue = [];
+        let isShowingTransmission = false;
+
+        // =================================================================
+        // INCOMING TRANSMISSION SYSTEM
+        // =================================================================
+        function getDealKey(deal) {
+            return `${deal.brand}-${deal.promo || deal.code || deal.offer || ''}`.toLowerCase().replace(/\s+/g, '-');
+        }
+
+        function checkForNewDeals(data) {
+            const newDeals = [];
+            
+            // Check promos with codes (most exciting)
+            (data.codes || []).forEach(c => {
+                const key = getDealKey({ brand: c.brand, promo: c.code });
+                if (!seenDeals[key]) {
+                    seenDeals[key] = Date.now();
+                    newDeals.push({
+                        brand: c.brand,
+                        detail: `CODE: ${c.code}`,
+                        type: 'code'
+                    });
+                }
+            });
+            
+            // Check high-value promos (40%+ off)
+            (data.promos || []).filter(p => p.promo).forEach(p => {
+                const key = getDealKey(p);
+                const discount = p.promo?.match(/(\d+)%/)?.[1];
+                if (!seenDeals[key] && discount && parseInt(discount) >= 40) {
+                    seenDeals[key] = Date.now();
+                    newDeals.push({
+                        brand: p.brand,
+                        detail: p.promo,
+                        type: 'promo'
+                    });
+                }
+            });
+            
+            // Save seen deals (keep last 500)
+            const keys = Object.keys(seenDeals);
+            if (keys.length > 500) {
+                const sorted = keys.sort((a, b) => seenDeals[a] - seenDeals[b]);
+                sorted.slice(0, keys.length - 500).forEach(k => delete seenDeals[k]);
+            }
+            localStorage.setItem('seenDeals', JSON.stringify(seenDeals));
+            
+            return newDeals;
+        }
+
+        function showTransmission(deal) {
+            const popup = document.getElementById('transmission-popup');
+            document.getElementById('transmission-brand').textContent = deal.brand.toUpperCase();
+            document.getElementById('transmission-detail').textContent = deal.detail;
+            
+            // Red flash effect
+            const flash = document.createElement('div');
+            flash.className = 'fixed inset-0 bg-radar-red/10 z-[99] pointer-events-none';
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 200);
+            
+            // Show popup
+            popup.classList.remove('opacity-0', '-translate-y-10', 'pointer-events-none');
+            popup.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+            isShowingTransmission = true;
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                dismissTransmission();
+            }, 5000);
+        }
+
+        function dismissTransmission() {
+            const popup = document.getElementById('transmission-popup');
+            popup.classList.add('opacity-0', '-translate-y-10', 'pointer-events-none');
+            popup.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+            isShowingTransmission = false;
+            
+            // Show next in queue after a short delay
+            setTimeout(() => {
+                if (transmissionQueue.length > 0 && !isShowingTransmission) {
+                    showTransmission(transmissionQueue.shift());
+                }
+            }, 800);
+        }
+
+        function queueTransmissions(newDeals) {
+            if (newDeals.length === 0) return;
+            
+            // Add to queue
+            transmissionQueue.push(...newDeals);
+            
+            // Start showing if not already
+            if (!isShowingTransmission) {
+                showTransmission(transmissionQueue.shift());
+            }
+            
+            // Log it
+            log(`⚡ NEW TRANSMISSION: ${newDeals.length} deal(s) detected`);
+        }
+
+        // =================================================================
+        // ZULU CLOCK
+        // =================================================================
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toISOString().substr(11, 8);
+            document.getElementById('zulu-clock').innerText = timeString;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // =================================================================
+        // SYSTEM LOG
+        // =================================================================
+        function log(message) {
+            const logEl = document.getElementById('system-log');
+            const entry = document.createElement('div');
+            entry.textContent = `> ${message}`;
+            entry.className = message.includes('ERROR') ? 'text-radar-red' : 
+                             message.includes('OK') || message.includes('FOUND') ? 'text-radar-green' : '';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // =================================================================
+        // FETCH DATA
+        // =================================================================
+        async function fetchData(isInitialLoad = false) {
+            try {
+                log('FETCHING BRAND DATA...');
+                const response = await fetch('/api/promos');
+                const data = await response.json();
+                
+                // Check for new deals (skip on initial page load)
+                if (!isInitialLoad) {
+                    const newDeals = checkForNewDeals(data);
+                    if (newDeals.length > 0) {
+                        queueTransmissions(newDeals);
+                    }
+                } else {
+                    // On initial load, just mark all current deals as seen
+                    (data.codes || []).forEach(c => {
+                        seenDeals[getDealKey({ brand: c.brand, promo: c.code })] = Date.now();
+                    });
+                    (data.promos || []).filter(p => p.promo).forEach(p => {
+                        seenDeals[getDealKey(p)] = Date.now();
+                    });
+                    localStorage.setItem('seenDeals', JSON.stringify(seenDeals));
+                }
+                
+                promoData = data;
+                
+                log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
+                log(`CODES EXTRACTED: ${data.codes?.length || 0}`);
+                log(`CLEARANCE ITEMS: ${data.clearance?.length || 0}`);
+                log(`PARTNER DEALS: ${data.impactDeals?.length || 0}`);
+                log(`EMAIL OFFERS: ${data.emailOffers?.length || 0}`);
+                
+                updateUI();
+                updateBlips();
+                updateMarquee();
+                
+                document.getElementById('feed-status').textContent = 'LIVE INTEL';
+                document.getElementById('feed-status').classList.remove('text-radar-red');
+                document.getElementById('feed-status').classList.add('text-radar-green');
+                
+                if (data.lastUpdated) {
+                    const date = new Date(data.lastUpdated);
+                    document.getElementById('last-update').textContent = `UPDATED ${date.toLocaleTimeString()}`;
+                }
+            } catch (error) {
+                console.error('Failed to fetch:', error);
+                log('ERROR: SIGNAL LOST');
+                document.getElementById('feed-status').textContent = 'CONNECTION ERROR';
+                document.getElementById('feed-status').classList.remove('text-radar-green');
+                document.getElementById('feed-status').classList.add('text-radar-red');
+            }
+        }
+
+        // =================================================================
+        // UPDATE UI
+        // =================================================================
+        function updateUI() {
+            // Stats
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            const codes = promoData.codes || [];
+            const emails = promoData.emailOffers || [];
+            const clearance = promoData.clearance || [];
+            
+            document.getElementById('stat-promos').textContent = promos.length;
+            document.getElementById('stat-codes').textContent = codes.length;
+            document.getElementById('stat-email').textContent = emails.length;
+            document.getElementById('target-count').textContent = promos.length.toString().padStart(3, '0');
+
+            // Render current tab
+            if (currentTab === 'promos') renderPromos();
+            else if (currentTab === 'codes') renderCodes();
+            else if (currentTab === 'clearance') renderClearance();
+            else if (currentTab === 'impact') renderImpactDeals();
+            else if (currentTab === 'email') renderEmail();
+        }
+
+        // =================================================================
+        // RENDER PROMOS
+        // =================================================================
+        function renderPromos() {
+            const grid = document.getElementById('deals-grid');
+            const featured = document.getElementById('featured-deal');
+            
+            let promos = promoData.promos?.filter(p => p.promo) || [];
+            
+            // Filter
+            if (currentFilter !== 'all') {
+                promos = promos.filter(p => p.category === currentFilter || p.tags?.includes(currentFilter));
+            }
+            
+            // Search
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                promos = promos.filter(p => 
+                    p.brand?.toLowerCase().includes(q) ||
+                    p.promo?.toLowerCase().includes(q) ||
+                    p.code?.toLowerCase().includes(q) ||
+                    p.tags?.some(t => t.toLowerCase().includes(q))
+                );
+            }
+
+            // Sort: NEW first, then by discount percentage
+            promos.sort((a, b) => {
+                // New deals first
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                
+                // Then by discount
+                const getDiscount = (p) => {
+                    const match = p.promo?.match(/(\d+)%/);
+                    return match ? parseInt(match[1]) : 0;
+                };
+                return getDiscount(b) - getDiscount(a);
+            });
+
+            // Featured (rotates through high-discount promos on each scan)
+            if (promos.length > 0 && !searchQuery) {
+                // Get all promos with 40%+ discount
+                const criticalHits = promos.filter(p => {
+                    const discount = p.promo?.match(/(\d+)%/)?.[1];
+                    return discount && parseInt(discount) >= 40;
+                });
+                
+                if (criticalHits.length > 0) {
+                    // Use criticalHitIndex from backend to rotate
+                    const rotationIndex = (promoData.criticalHitIndex || 0) % criticalHits.length;
+                    const top = criticalHits[rotationIndex];
+                    const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
+                    
+                    const linkUrl = top.affiliate_url || top.url;
+                    const hasLogo = top.image && !top.image.includes('data:');
+                    featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
+                    featured.innerHTML = `
+                        <div class="target-corner tl border-radar-red"></div>
+                        <div class="target-corner tr border-radar-red"></div>
+                        <div class="target-corner bl border-radar-red"></div>
+                        <div class="target-corner br border-radar-red"></div>
+                        <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
+                        <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
+                            <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
+                                ${hasLogo 
+                                    ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
+                                    : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
+                                }
+                            </div>
+                            <div class="flex-grow">
+                                <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
+                                <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${discount}% OFF</span>
+                                    ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
+                                </div>
+                            </div>
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
+                                ACCESS
+                            </a>
+                        </div>
+                    `;
+                    // Remove the featured item from the grid
+                    promos = promos.filter(p => p.brand !== top.brand || p.promo !== top.promo);
+                } else {
+                    featured.className = 'hidden';
+                    featured.innerHTML = '';
+                }
+            } else {
+                featured.className = 'hidden';
+                featured.innerHTML = '';
+            }
+
+            // Grid
+            if (promos.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-radar text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO SIGNALS DETECTED</div>
+                        <div class="text-sm mt-2">Try adjusting your filters</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = promos.map(p => {
+                const discount = p.promo?.match(/(\d+)%/)?.[1] || 0;
+                const isHot = discount >= 30;
+                const isNew = p.is_new;
+                const isStale = p.is_stale;
+                const icon = getCategoryIcon(p.category);
+                const linkUrl = p.affiliate_url || p.url;
+                const hasLogo = p.image && !p.image.includes('data:');
+                
+                // Badge logic: NEW > HOT > ALWAYS ON
+                let badge = '';
+                if (isNew) {
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
+                } else if (isHot) {
+                    badge = '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>';
+                } else if (isStale) {
+                    badge = '<span class="text-gray-500 text-xs border border-gray-600 px-1">ONGOING</span>';
+                }
+                
+                // Expiration indicator
+                let expiresText = '';
+                if (p.expires) {
+                    try {
+                        const expDate = new Date(p.expires);
+                        const now = new Date();
+                        const hoursLeft = (expDate - now) / (1000 * 60 * 60);
+                        if (hoursLeft > 0 && hoursLeft < 48) {
+                            expiresText = `<span class="text-radar-red text-[10px] ml-2"><i class="fas fa-clock mr-1"></i>ENDS SOON</span>`;
+                        }
+                    } catch (e) {}
+                }
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
+                        
+                        <div class="p-5">
+                            <div class="flex justify-between items-start mb-4 relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-white rounded-sm flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                        ${hasLogo 
+                                            ? `<img src="${p.image}" alt="${p.brand}" class="w-full h-full object-contain p-1" onerror="this.parentElement.innerHTML='<i class=\\'fas ${icon} text-black\\'></i>'">`
+                                            : `<i class="fas ${icon} text-black"></i>`
+                                        }
+                                    </div>
+                                    <div>
+                                        <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
+                                        <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}${expiresText}</span>
+                                    </div>
+                                </div>
+                                ${badge}
+                            </div>
+                            
+                            <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
+                            ${p.email_offer ? `<p class="text-radar-orange text-xs mb-3 relative z-10"><i class="fas fa-envelope mr-1"></i>Email signup: ${p.email_offer}</p>` : ''}
+                            
+                            <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
+                                ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-mono" onclick="event.preventDefault(); event.stopPropagation(); copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
+                                <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                    View <i class="fas fa-chevron-right text-xs"></i>
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="lock-status absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span class="text-radar-green/10 text-4xl font-loud tracking-widest uppercase transform -rotate-12 group-hover:text-radar-green/20">TARGET LOCKED</span>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER CODES
+        // =================================================================
+        function renderCodes() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let codes = promoData.codes || [];
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                codes = codes.filter(c => 
+                    c.brand?.toLowerCase().includes(q) ||
+                    c.code?.toLowerCase().includes(q)
+                );
+            }
+
+            if (codes.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-key text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO CODES INTERCEPTED</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = codes.map(c => {
+                const linkUrl = c.affiliate_url || c.url || '#';
+                const isNew = c.is_new;
+                return `
+                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
+                    ${isNew ? '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>' : ''}
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="font-loud text-xl text-white hover:text-radar-green transition-colors">${c.brand} <i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i></a>
+                            <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}</p>
+                        </div>
+                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-mono text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
+                            ${c.code}
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        // =================================================================
+        // RENDER CLEARANCE
+        // =================================================================
+        function renderClearance() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let items = promoData.clearance || [];
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                items = items.filter(c => c.category === currentFilter);
+            }
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                items = items.filter(c => 
+                    c.brand?.toLowerCase().includes(q) ||
+                    c.promo?.toLowerCase().includes(q)
+                );
+            }
+            
+            // Sort: NEW first, then by discount percentage (highest first)
+            items.sort((a, b) => {
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return (b.discount || 0) - (a.discount || 0);
+            });
+
+            if (items.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-tags text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO CLEARANCE ITEMS DETECTED</div>
+                        <div class="text-sm mt-2">Sale pages are scanned every 10 minutes</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = items.map(c => {
+                const linkUrl = c.affiliate_url || c.url;
+                const discount = c.discount;
+                const icon = getCategoryIcon(c.category);
+                const isNew = c.is_new;
+                
+                // Badge logic
+                let badge = '';
+                if (isNew) {
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
+                } else if (discount) {
+                    badge = `<span class="text-radar-orange text-xs border border-radar-orange px-1">${discount}% OFF</span>`;
+                }
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-orange transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : ''}">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
+                        
+                        <div class="p-5">
+                            <div class="flex justify-between items-start mb-4 relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-radar-orange/20 rounded-sm flex items-center justify-center flex-shrink-0">
+                                        <i class="fas fa-tags text-radar-orange"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-loud text-2xl text-white leading-none">${c.brand}</h4>
+                                        <span class="text-xs text-gray-500">${c.category?.toUpperCase() || 'SALE'}</span>
+                                    </div>
+                                </div>
+                                ${badge}
+                            </div>
+                            
+                            <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${c.promo}</p>
+                            
+                            <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
+                                <span class="text-radar-orange font-bold text-sm">CLEARANCE${discount && !isNew ? ` • ${discount}% OFF` : ''}</span>
+                                <span class="text-white group-hover:text-radar-orange font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                    Shop <i class="fas fa-chevron-right text-xs"></i>
+                                </span>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER IMPACT/PARTNER DEALS
+        // =================================================================
+        function renderImpactDeals() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let deals = promoData.impactDeals || [];
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                const categoryMap = {
+                    'apparel': ['mizzen', 'travis', 'malbon', 'sunday', 'sounder', 'j.lindeberg'],
+                    'footwear': ['duca'],
+                    'equipment': ['taylormade', 'wilson', 'stewart', 'rapsodo', 'sun mountain'],
+                    'accessories': ['stitch', 'boston scally', 'seamus'],
+                };
+                const keywords = categoryMap[currentFilter] || [];
+                if (keywords.length > 0) {
+                    deals = deals.filter(d => {
+                        const brandLower = d.brand?.toLowerCase() || '';
+                        return keywords.some(k => brandLower.includes(k));
+                    });
+                }
+            }
+            
+            // Search filter
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                deals = deals.filter(d => 
+                    d.brand?.toLowerCase().includes(q) ||
+                    d.promo?.toLowerCase().includes(q)
+                );
+            }
+            
+            // Sort: NEW first, then by discount (highest first)
+            deals.sort((a, b) => {
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return (b.discount || 0) - (a.discount || 0);
+            });
+
+            if (deals.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-handshake text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO PARTNER DEALS AVAILABLE</div>
+                        <div class="text-sm mt-2">Partner deals are pulled from Impact Radius</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = deals.map(d => {
+                const linkUrl = d.affiliate_url || '#';
+                const discount = d.discount || 0;
+                const isNew = d.is_new;
+                const isStale = d.is_stale;
+                
+                // Badge logic
+                let badge = '';
+                if (isNew) {
+                    badge = '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>';
+                } else if (discount >= 30) {
+                    badge = '<div class="absolute top-0 right-0 bg-radar-red text-white text-[10px] font-bold px-2 py-1 animate-pulse">HOT</div>';
+                } else if (isStale) {
+                    badge = '<div class="absolute top-0 right-0 bg-gray-700 text-gray-400 text-[10px] font-bold px-2 py-1">ONGOING</div>';
+                }
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
+                        ${badge}
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 bg-white rounded flex items-center justify-center flex-shrink-0 p-1">
+                                <i class="fas fa-tag text-radar-dark"></i>
+                            </div>
+                            <div class="flex-grow min-w-0">
+                                <h4 class="text-white font-bold text-lg truncate relative z-10">${d.brand}</h4>
+                                <p class="text-gray-400 text-sm mt-1 line-clamp-2">${d.promo}</p>
+                                <div class="flex items-center justify-between mt-3">
+                                    ${discount ? `<span class="text-xs font-bold bg-radar-green text-black px-2 py-0.5">${discount}% OFF</span>` : '<span></span>'}
+                                    <span class="text-radar-green text-sm font-bold group-hover:underline">Shop <i class="fas fa-chevron-right text-xs ml-1"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER EMAIL OFFERS
+        // =================================================================
+        function renderEmail() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let offers = promoData.emailOffers || [];
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                offers = offers.filter(o => 
+                    o.brand?.toLowerCase().includes(q) ||
+                    o.offer?.toLowerCase().includes(q)
+                );
+            }
+
+            if (offers.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-envelope text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO EMAIL OFFERS DETECTED</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = offers.map(o => {
+                const linkUrl = o.affiliate_url || o.url || '#';
+                return `
+                <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 block">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 bg-radar-orange/20 rounded-full flex items-center justify-center">
+                            <i class="fas fa-envelope text-radar-orange"></i>
+                        </div>
+                        <div class="flex-grow">
+                            <h4 class="font-loud text-xl text-white">${o.brand}</h4>
+                            <p class="text-gray-400 text-sm">${o.offer}</p>
+                        </div>
+                        <span class="text-radar-green text-sm font-bold group-hover:underline">Visit <i class="fas fa-chevron-right text-xs ml-1"></i></span>
+                    </div>
+                </a>
+            `}).join('');
+        }
+
+        // =================================================================
+        // HELPERS
+        // =================================================================
+        function getCategoryIcon(category) {
+            const icons = {
+                apparel: 'fa-tshirt',
+                footwear: 'fa-shoe-prints',
+                oem: 'fa-golf-ball',
+                retailer: 'fa-shopping-bag',
+                bags: 'fa-suitcase',
+                accessories: 'fa-hat-cowboy',
+                womens: 'fa-venus'
+            };
+            return icons[category] || 'fa-tag';
+        }
+
+        function copyCode(code, el) {
+            navigator.clipboard.writeText(code);
+            el.classList.add('copied');
+            const original = el.innerHTML;
+            el.innerHTML = '<i class="fas fa-check"></i> COPIED';
+            setTimeout(() => {
+                el.classList.remove('copied');
+                el.innerHTML = original;
+            }, 2000);
+        }
+
+        function handleSearch(value) {
+            searchQuery = value;
+            updateUI();
+        }
+
+        // =================================================================
+        // TABS
+        // =================================================================
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tab) {
+                    btn.classList.add('border-radar-green', 'text-radar-green');
+                    btn.classList.remove('border-transparent', 'text-gray-500');
+                } else {
+                    btn.classList.remove('border-radar-green', 'text-radar-green');
+                    btn.classList.add('border-transparent', 'text-gray-500');
+                }
+            });
+            updateUI();
+        }
+
+        // =================================================================
+        // FILTERS
+        // =================================================================
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentFilter = btn.dataset.filter;
+                
+                document.querySelectorAll('.filter-btn').forEach(b => {
+                    b.classList.remove('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
+                    b.classList.add('text-gray-400', 'border-transparent');
+                });
+                btn.classList.remove('text-gray-400', 'border-transparent');
+                btn.classList.add('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
+                
+                if (currentTab === 'promos') renderPromos();
+                else if (currentTab === 'clearance') renderClearance();
+                else if (currentTab === 'impact') renderImpactDeals();
+            });
+        });
+
+        // =================================================================
+        // RADAR BLIPS
+        // =================================================================
+        function updateBlips() {
+            const container = document.getElementById('blips-container');
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            
+            container.innerHTML = '';
+            
+            const numBlips = Math.min(promos.length, 12);
+            for (let i = 0; i < numBlips; i++) {
+                const blip = document.createElement('div');
+                blip.className = 'blip';
+                
+                // Random position in circle
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 20 + Math.random() * 70;
+                const x = 50 + Math.cos(angle) * radius * 0.4;
+                const y = 50 + Math.sin(angle) * radius * 0.4;
+                
+                blip.style.left = `${x}%`;
+                blip.style.top = `${y}%`;
+                blip.style.animationDelay = `${Math.random() * 4}s`;
+                
+                container.appendChild(blip);
+            }
+        }
+
+        // =================================================================
+        // MARQUEE - Clickable items
+        // =================================================================
+        function updateMarquee() {
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            if (promos.length === 0) return;
+            
+            const highlights = promos.slice(0, 15).map(p => {
+                const linkUrl = p.affiliate_url || p.url;
+                return `<a href="${linkUrl}" target="_blank" rel="noopener" class="hover:underline hover:text-white transition-colors">${p.brand.toUpperCase()}: ${p.promo.toUpperCase()}</a>`;
+            }).join(' <span class="mx-4 opacity-50">•</span> ');
+            
+            const content = highlights + ' <span class="mx-4 opacity-50">•</span> ';
+            document.getElementById('marquee-text').innerHTML = content;
+            document.getElementById('marquee-text-2').innerHTML = content;
+        }
+
+        // =================================================================
+        // REFRESH SCAN
+        // =================================================================
+        async function refreshScan() {
+            const btn = document.getElementById('scan-btn');
+            const icon = document.getElementById('scan-icon');
+            const panel = document.getElementById('radar-panel');
+            
+            btn.disabled = true;
+            icon.classList.add('animate-spin');
+            panel.classList.add('scanning');
+            
+            log('INITIATING MANUAL SCAN...');
+            
+            try {
+                await fetch('/api/refresh', { method: 'POST' });
+                log('SCAN TRIGGERED... AWAITING RESULTS');
+                
+                // Wait and refetch
+                setTimeout(async () => {
+                    await fetchData();
+                    btn.disabled = false;
+                    icon.classList.remove('animate-spin');
+                    panel.classList.remove('scanning');
+                    
+                    // Toast
+                    const notification = document.createElement('div');
+                    notification.className = 'fixed bottom-20 right-4 bg-radar-green text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(0,255,65,0.4)] z-[60] transform translate-y-20 transition-transform duration-300 border-l-4 border-white';
+                    notification.innerHTML = '<i class="fas fa-check-circle"></i> SCAN COMPLETE';
+                    document.body.appendChild(notification);
+                    
+                    requestAnimationFrame(() => notification.classList.remove('translate-y-20'));
+                    setTimeout(() => {
+                        notification.classList.add('translate-y-20');
+                        setTimeout(() => notification.remove(), 300);
+                    }, 3000);
+                }, 3000);
+            } catch (err) {
+                log('ERROR: SCAN FAILED');
+                btn.disabled = false;
+                icon.classList.remove('animate-spin');
+                panel.classList.remove('scanning');
+            }
+        }
+
+        // =================================================================
+        // GREEN FLASH = Cards WITH promo codes (most actionable)
+        // =================================================================
+        setInterval(() => {
+            const cards = document.querySelectorAll('a.deal-card');
+            const cardsWithCodes = Array.from(cards).filter(card => card.dataset.code);
+            
+            if (cardsWithCodes.length > 0) {
+                const randomCard = cardsWithCodes[Math.floor(Math.random() * cardsWithCodes.length)];
+                randomCard.style.borderColor = '#00ff41';
+                randomCard.style.boxShadow = '0 0 20px rgba(0, 255, 65, 0.3)';
+                setTimeout(() => {
+                    randomCard.style.borderColor = '';
+                    randomCard.style.boxShadow = '';
+                }, 300);
+            }
+        }, 3000);
+
+        // =================================================================
+        // INIT
+        // =================================================================
+        fetchData(true); // Initial load - don't show transmissions
+        setInterval(() => fetchData(false), 10 * 60 * 1000); // Refresh every 10 mins - show new transmissions
+    </script>
 </body>
-</html>'''
-
-
-# =============================================================================
-# SEO LANDING PAGES
-# =============================================================================
-@app.route('/deals')
-def deals_index():
-    """SEO index page listing all brands"""
-    return send_from_directory('.', 'deals_index.html')
-
-
-@app.route('/deals/<brand_slug>')
-def brand_deals_page(brand_slug):
-    """SEO landing page for specific brand deals"""
-    return send_from_directory('.', 'brand_deals.html')
-
-
-@app.route('/api/brands')
-def get_brands():
-    """Get list of all brands for SEO pages"""
-    brand_list = []
-    for brand in BRANDS:
-        slug = brand["name"].lower().replace(" ", "-").replace("/", "-").replace(".", "")
-        brand_list.append({
-            "name": brand["name"],
-            "slug": slug,
-            "url": brand["url"],
-            "category": brand.get("category", ""),
-            "affiliate_url": brand.get("affiliate_url", "")
-        })
-    return jsonify({"brands": brand_list})
-
-
-@app.route('/api/deals/<brand_slug>')
-def get_brand_deals(brand_slug):
-    """Get deals for a specific brand"""
-    data = load_data()
-    
-    # Find matching brand
-    brand_name = None
-    brand_info = None
-    for brand in BRANDS:
-        slug = brand["name"].lower().replace(" ", "-").replace("/", "-").replace(".", "")
-        if slug == brand_slug:
-            brand_name = brand["name"]
-            brand_info = brand
-            break
-    
-    if not brand_name:
-        return jsonify({"error": "Brand not found"}), 404
-    
-    # Find all deals for this brand
-    promos = [p for p in data.get("promos", []) if p.get("brand") == brand_name]
-    codes = [c for c in data.get("codes", []) if c.get("brand") == brand_name]
-    clearance = [c for c in data.get("clearance", []) if c.get("brand") == brand_name]
-    email_offers = [e for e in data.get("emailOffers", []) if e.get("brand") == brand_name]
-    impact_deals = [i for i in data.get("impactDeals", []) if brand_name.lower() in i.get("brand", "").lower()]
-    
-    return jsonify({
-        "brand": brand_name,
-        "slug": brand_slug,
-        "url": brand_info.get("url", ""),
-        "affiliate_url": brand_info.get("affiliate_url", ""),
-        "category": brand_info.get("category", ""),
-        "promos": promos,
-        "codes": codes,
-        "clearance": clearance,
-        "email_offers": email_offers,
-        "impact_deals": impact_deals,
-        "last_updated": data.get("lastUpdated")
-    })
-
-
-# =============================================================================
-# ADMIN DASHBOARD ROUTES
-# =============================================================================
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "skratch2024")  # Set in Railway env vars
-
-def check_admin_auth():
-    """Check if request has valid admin auth"""
-    # Check session
-    if session.get('admin_authenticated'):
-        return True
-    # Check header (for API calls)
-    auth_header = request.headers.get('X-Admin-Password')
-    if auth_header == ADMIN_PASSWORD:
-        return True
-    return False
-
-
-@app.route('/admin')
-def admin_dashboard():
-    if not session.get('admin_authenticated'):
-        return send_from_directory('.', 'admin_login.html')
-    return send_from_directory('.', 'admin_dashboard.html')
-
-
-@app.route('/admin/login', methods=['POST'])
-def admin_login():
-    data = request.get_json() or {}
-    password = data.get('password', '')
-    
-    if password == ADMIN_PASSWORD:
-        session['admin_authenticated'] = True
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Invalid password"}), 401
-
-
-@app.route('/admin/logout')
-def admin_logout():
-    session.pop('admin_authenticated', None)
-    return jsonify({"success": True})
-
-
-@app.route('/api/admin/stats')
-def admin_stats():
-    """Get performance stats from Impact"""
-    if not check_admin_auth():
-        return jsonify({"error": "Unauthorized"}), 401
-    if not impact_api:
-        return jsonify({"error": "Impact API not configured"}), 500
-    
-    try:
-        report = impact_api.get_performance_report(days=30)
-        return jsonify(report)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/admin/campaigns')
-def admin_campaigns():
-    """Get all campaigns with tracking links"""
-    if not check_admin_auth():
-        return jsonify({"error": "Unauthorized"}), 401
-    if not impact_api:
-        return jsonify({"error": "Impact API not configured"}), 500
-    
-    try:
-        campaigns = impact_api.get_campaigns(force_refresh=True)
-        return jsonify({"campaigns": campaigns})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/admin/actions')
-def admin_actions():
-    """Get recent conversion actions"""
-    if not check_admin_auth():
-        return jsonify({"error": "Unauthorized"}), 401
-    if not impact_api:
-        return jsonify({"error": "Impact API not configured"}), 500
-    
-    try:
-        actions = impact_api.get_actions()
-        return jsonify({"actions": actions, "count": len(actions)})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/admin/radar-stats')
-def radar_stats():
-    """Get Radar-specific stats"""
-    if not check_admin_auth():
-        return jsonify({"error": "Unauthorized"}), 401
-    
-    data = load_data()
-    
-    # Count by category
-    category_counts = {}
-    for promo in data.get("promos", []):
-        cat = promo.get("category", "unknown")
-        category_counts[cat] = category_counts.get(cat, 0) + 1
-    
-    # Count affiliate-linked vs not
-    with_affiliate = sum(1 for p in data.get("promos", []) if p.get("affiliate_url"))
-    without_affiliate = len(data.get("promos", [])) - with_affiliate
-    
-    return jsonify({
-        "total_promos": len(data.get("promos", [])),
-        "total_codes": len(data.get("codes", [])),
-        "total_email_offers": len(data.get("emailOffers", [])),
-        "total_clearance": len(data.get("clearance", [])),
-        "total_impact_deals": len(data.get("impactDeals", [])),
-        "with_affiliate_link": with_affiliate,
-        "without_affiliate_link": without_affiliate,
-        "by_category": category_counts,
-        "last_updated": data.get("lastUpdated"),
-        "total_brands_monitored": len(BRANDS)
-    })
-
-
-# =============================================================================
-# MAIN
-# =============================================================================
-if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("⛳ SKRATCH RADAR - Golf Promo Intelligence")
-    print(f"📡 Monitoring {len(BRANDS)} brands")
-    print("="*60)
-    
-    # Run initial scrape in background
-    print(f"\n🔄 Starting initial scan...")
-    thread = threading.Thread(target=run_scraper)
-    thread.start()
-    
-    # Set up scheduler
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(run_scraper, 'interval', minutes=REFRESH_INTERVAL_MINUTES)
-    scheduler.start()
-    print(f"⏰ Auto-refresh every {REFRESH_INTERVAL_MINUTES} minutes")
-    
-    print(f"\n🌐 Server starting at http://localhost:{PORT}")
-    app.run(host='0.0.0.0', port=PORT, debug=False)
+</html>
