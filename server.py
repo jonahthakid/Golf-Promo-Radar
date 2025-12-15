@@ -12,7 +12,7 @@ import threading
 import requests
 from datetime import datetime
 from urllib.parse import urlparse, urljoin
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request, session, Response
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
@@ -1332,6 +1332,11 @@ CORS(app)
 def index():
     return send_from_directory('.', 'golf_promo_radar.html')
 
+
+@app.route('/widget')
+def widget():
+    return send_from_directory('.', 'widget.html')
+
 @app.route('/api/promos')
 def get_promos():
     return jsonify(load_data())
@@ -1353,13 +1358,191 @@ def status():
 
 
 # =============================================================================
+# EMBED WIDGET
+# =============================================================================
+@app.route('/embed.js')
+def embed_js():
+    """Embeddable widget script for Skratch/GolfWRX articles"""
+    js = '''
+(function() {
+    const container = document.getElementById('skratch-radar-widget');
+    if (!container) return;
+    
+    const style = document.createElement('style');
+    style.textContent = `
+        .sr-widget { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 8px; padding: 16px; max-width: 400px; }
+        .sr-widget * { box-sizing: border-box; }
+        .sr-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #1a1a1a; }
+        .sr-logo { width: 24px; height: 24px; background: #00ff41; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .sr-logo svg { width: 14px; height: 14px; }
+        .sr-title { color: #fff; font-weight: 700; font-size: 14px; }
+        .sr-live { color: #00ff41; font-size: 10px; font-weight: 600; margin-left: auto; }
+        .sr-deal { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1a1a1a; text-decoration: none; }
+        .sr-deal:last-child { border-bottom: none; }
+        .sr-deal:hover .sr-brand { color: #00ff41; }
+        .sr-badge { background: #00ff41; color: #000; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 3px; }
+        .sr-info { flex: 1; min-width: 0; }
+        .sr-brand { color: #fff; font-weight: 600; font-size: 13px; transition: color 0.2s; }
+        .sr-promo { color: #888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sr-cta { text-align: center; margin-top: 12px; }
+        .sr-cta a { color: #00ff41; font-size: 12px; text-decoration: none; font-weight: 600; }
+        .sr-cta a:hover { text-decoration: underline; }
+    `;
+    document.head.appendChild(style);
+    
+    fetch('WIDGET_URL/api/promos')
+        .then(r => r.json())
+        .then(data => {
+            const deals = (data.promos || [])
+                .filter(p => p.promo && p.promo.match(/\\d+%/))
+                .sort((a, b) => {
+                    const aDiscount = parseInt(a.promo.match(/(\\d+)%/)?.[1] || 0);
+                    const bDiscount = parseInt(b.promo.match(/(\\d+)%/)?.[1] || 0);
+                    return bDiscount - aDiscount;
+                })
+                .slice(0, 5);
+            
+            container.innerHTML = `
+                <div class="sr-widget">
+                    <div class="sr-header">
+                        <div class="sr-logo"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="12"/></svg></div>
+                        <span class="sr-title">GOLF DEALS RADAR</span>
+                        <span class="sr-live">● LIVE</span>
+                    </div>
+                    ${deals.map(d => {
+                        const discount = d.promo.match(/(\\d+)%/)?.[1] || '';
+                        const link = d.affiliate_url || d.url;
+                        return `<a href="${link}" target="_blank" rel="noopener" class="sr-deal">
+                            <span class="sr-badge">${discount}%</span>
+                            <div class="sr-info">
+                                <div class="sr-brand">${d.brand}</div>
+                                <div class="sr-promo">${d.promo}</div>
+                            </div>
+                        </a>`;
+                    }).join('')}
+                    <div class="sr-cta"><a href="WIDGET_URL" target="_blank">View All Deals →</a></div>
+                </div>
+            `;
+        })
+        .catch(e => console.error('Radar widget error:', e));
+})();
+'''
+    # Replace WIDGET_URL with actual URL
+    base_url = request.url_root.rstrip('/')
+    js = js.replace('WIDGET_URL', base_url)
+    
+    return Response(js, mimetype='application/javascript')
+
+
+@app.route('/embed')
+def embed_demo():
+    """Demo page showing how to embed the widget"""
+    base_url = request.url_root.rstrip('/')
+    return f'''<!DOCTYPE html>
+<html>
+<head>
+    <title>Skratch Radar - Embed Widget</title>
+    <style>
+        body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }}
+        h1 {{ color: #333; }}
+        pre {{ background: #1a1a1a; color: #00ff41; padding: 20px; border-radius: 8px; overflow-x: auto; }}
+        .demo {{ margin: 40px 0; padding: 40px; background: #fff; border-radius: 8px; }}
+    </style>
+</head>
+<body>
+    <h1>Embed Golf Deals Radar</h1>
+    <p>Add this widget to any Skratch or GolfWRX article:</p>
+    
+    <pre>&lt;div id="skratch-radar-widget"&gt;&lt;/div&gt;
+&lt;script src="{base_url}/embed.js"&gt;&lt;/script&gt;</pre>
+    
+    <h2>Live Preview:</h2>
+    <div class="demo">
+        <div id="skratch-radar-widget"></div>
+        <script src="{base_url}/embed.js"></script>
+    </div>
+</body>
+</html>'''
+
+
+# =============================================================================
+# SEO LANDING PAGES
+# =============================================================================
+@app.route('/deals')
+def deals_index():
+    """SEO index page listing all brands"""
+    return send_from_directory('.', 'deals_index.html')
+
+
+@app.route('/deals/<brand_slug>')
+def brand_deals_page(brand_slug):
+    """SEO landing page for specific brand deals"""
+    return send_from_directory('.', 'brand_deals.html')
+
+
+@app.route('/api/brands')
+def get_brands():
+    """Get list of all brands for SEO pages"""
+    brand_list = []
+    for brand in BRANDS:
+        slug = brand["name"].lower().replace(" ", "-").replace("/", "-").replace(".", "")
+        brand_list.append({
+            "name": brand["name"],
+            "slug": slug,
+            "url": brand["url"],
+            "category": brand.get("category", ""),
+            "affiliate_url": brand.get("affiliate_url", "")
+        })
+    return jsonify({"brands": brand_list})
+
+
+@app.route('/api/deals/<brand_slug>')
+def get_brand_deals(brand_slug):
+    """Get deals for a specific brand"""
+    data = load_data()
+    
+    # Find matching brand
+    brand_name = None
+    brand_info = None
+    for brand in BRANDS:
+        slug = brand["name"].lower().replace(" ", "-").replace("/", "-").replace(".", "")
+        if slug == brand_slug:
+            brand_name = brand["name"]
+            brand_info = brand
+            break
+    
+    if not brand_name:
+        return jsonify({"error": "Brand not found"}), 404
+    
+    # Find all deals for this brand
+    promos = [p for p in data.get("promos", []) if p.get("brand") == brand_name]
+    codes = [c for c in data.get("codes", []) if c.get("brand") == brand_name]
+    clearance = [c for c in data.get("clearance", []) if c.get("brand") == brand_name]
+    email_offers = [e for e in data.get("emailOffers", []) if e.get("brand") == brand_name]
+    impact_deals = [i for i in data.get("impactDeals", []) if brand_name.lower() in i.get("brand", "").lower()]
+    
+    return jsonify({
+        "brand": brand_name,
+        "slug": brand_slug,
+        "url": brand_info.get("url", ""),
+        "affiliate_url": brand_info.get("affiliate_url", ""),
+        "category": brand_info.get("category", ""),
+        "promos": promos,
+        "codes": codes,
+        "clearance": clearance,
+        "email_offers": email_offers,
+        "impact_deals": impact_deals,
+        "last_updated": data.get("lastUpdated")
+    })
+
+
+# =============================================================================
 # ADMIN DASHBOARD ROUTES
 # =============================================================================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "skratch2024")  # Set in Railway env vars
 
 def check_admin_auth():
     """Check if request has valid admin auth"""
-    from flask import request, session
     # Check session
     if session.get('admin_authenticated'):
         return True
@@ -1372,7 +1555,6 @@ def check_admin_auth():
 
 @app.route('/admin')
 def admin_dashboard():
-    from flask import session
     if not session.get('admin_authenticated'):
         return send_from_directory('.', 'admin_login.html')
     return send_from_directory('.', 'admin_dashboard.html')
@@ -1380,7 +1562,6 @@ def admin_dashboard():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
-    from flask import request, session
     data = request.get_json() or {}
     password = data.get('password', '')
     
@@ -1392,7 +1573,6 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    from flask import session
     session.pop('admin_authenticated', None)
     return jsonify({"success": True})
 
