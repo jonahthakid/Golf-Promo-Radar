@@ -771,8 +771,13 @@
                 );
             }
 
-            // Sort by discount percentage
+            // Sort: NEW first, then by discount percentage
             promos.sort((a, b) => {
+                // New deals first
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                
+                // Then by discount
                 const getDiscount = (p) => {
                     const match = p.promo?.match(/(\d+)%/);
                     return match ? parseInt(match[1]) : 0;
@@ -849,12 +854,37 @@
             grid.innerHTML = promos.map(p => {
                 const discount = p.promo?.match(/(\d+)%/)?.[1] || 0;
                 const isHot = discount >= 30;
+                const isNew = p.is_new;
+                const isStale = p.is_stale;
                 const icon = getCategoryIcon(p.category);
                 const linkUrl = p.affiliate_url || p.url;
                 const hasLogo = p.image && !p.image.includes('data:');
                 
+                // Badge logic: NEW > HOT > ALWAYS ON
+                let badge = '';
+                if (isNew) {
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
+                } else if (isHot) {
+                    badge = '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>';
+                } else if (isStale) {
+                    badge = '<span class="text-gray-500 text-xs border border-gray-600 px-1">ONGOING</span>';
+                }
+                
+                // Expiration indicator
+                let expiresText = '';
+                if (p.expires) {
+                    try {
+                        const expDate = new Date(p.expires);
+                        const now = new Date();
+                        const hoursLeft = (expDate - now) / (1000 * 60 * 60);
+                        if (hoursLeft > 0 && hoursLeft < 48) {
+                            expiresText = `<span class="text-radar-red text-[10px] ml-2"><i class="fas fa-clock mr-1"></i>ENDS SOON</span>`;
+                        }
+                    } catch (e) {}
+                }
+                
                 return `
-                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
                         <div class="target-corner tl"></div>
                         <div class="target-corner tr"></div>
                         <div class="target-corner bl"></div>
@@ -871,10 +901,10 @@
                                     </div>
                                     <div>
                                         <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
-                                        <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}</span>
+                                        <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}${expiresText}</span>
                                     </div>
                                 </div>
-                                ${isHot ? '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>' : ''}
+                                ${badge}
                             </div>
                             
                             <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
@@ -925,8 +955,10 @@
 
             grid.innerHTML = codes.map(c => {
                 const linkUrl = c.affiliate_url || c.url || '#';
+                const isNew = c.is_new;
                 return `
-                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
+                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
+                    ${isNew ? '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>' : ''}
                     <div class="flex justify-between items-center">
                         <div>
                             <a href="${linkUrl}" target="_blank" rel="noopener" class="font-loud text-xl text-white hover:text-radar-green transition-colors">${c.brand} <i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i></a>
@@ -962,8 +994,12 @@
                 );
             }
             
-            // Sort by discount percentage (highest first)
-            items.sort((a, b) => (b.discount || 0) - (a.discount || 0));
+            // Sort: NEW first, then by discount percentage (highest first)
+            items.sort((a, b) => {
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return (b.discount || 0) - (a.discount || 0);
+            });
 
             if (items.length === 0) {
                 grid.innerHTML = `
@@ -980,9 +1016,18 @@
                 const linkUrl = c.affiliate_url || c.url;
                 const discount = c.discount;
                 const icon = getCategoryIcon(c.category);
+                const isNew = c.is_new;
+                
+                // Badge logic
+                let badge = '';
+                if (isNew) {
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
+                } else if (discount) {
+                    badge = `<span class="text-radar-orange text-xs border border-radar-orange px-1">${discount}% OFF</span>`;
+                }
                 
                 return `
-                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-orange transition-colors duration-300 cursor-pointer overflow-hidden">
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-orange transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : ''}">
                         <div class="target-corner tl"></div>
                         <div class="target-corner tr"></div>
                         <div class="target-corner bl"></div>
@@ -999,13 +1044,13 @@
                                         <span class="text-xs text-gray-500">${c.category?.toUpperCase() || 'SALE'}</span>
                                     </div>
                                 </div>
-                                ${discount ? `<span class="text-radar-orange text-xs border border-radar-orange px-1">${discount}% OFF</span>` : ''}
+                                ${badge}
                             </div>
                             
                             <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${c.promo}</p>
                             
                             <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
-                                <span class="text-radar-orange font-bold text-sm">CLEARANCE</span>
+                                <span class="text-radar-orange font-bold text-sm">CLEARANCE${discount && !isNew ? ` • ${discount}% OFF` : ''}</span>
                                 <span class="text-white group-hover:text-radar-orange font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     Shop <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
@@ -1051,8 +1096,12 @@
                 );
             }
             
-            // Sort by discount (highest first)
-            deals.sort((a, b) => (b.discount || 0) - (a.discount || 0));
+            // Sort: NEW first, then by discount (highest first)
+            deals.sort((a, b) => {
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return (b.discount || 0) - (a.discount || 0);
+            });
 
             if (deals.length === 0) {
                 grid.innerHTML = `
@@ -1068,10 +1117,22 @@
             grid.innerHTML = deals.map(d => {
                 const linkUrl = d.affiliate_url || '#';
                 const discount = d.discount || 0;
+                const isNew = d.is_new;
+                const isStale = d.is_stale;
+                
+                // Badge logic
+                let badge = '';
+                if (isNew) {
+                    badge = '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>';
+                } else if (discount >= 30) {
+                    badge = '<div class="absolute top-0 right-0 bg-radar-red text-white text-[10px] font-bold px-2 py-1 animate-pulse">HOT</div>';
+                } else if (isStale) {
+                    badge = '<div class="absolute top-0 right-0 bg-gray-700 text-gray-400 text-[10px] font-bold px-2 py-1">ONGOING</div>';
+                }
                 
                 return `
-                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
-                        ${discount >= 30 ? '<div class="absolute top-0 right-0 bg-radar-red text-white text-[10px] font-bold px-2 py-1 animate-pulse">HOT</div>' : ''}
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
+                        ${badge}
                         <div class="flex items-start gap-4">
                             <div class="w-10 h-10 bg-white rounded flex items-center justify-center flex-shrink-0 p-1">
                                 <i class="fas fa-tag text-radar-dark"></i>
