@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skratch Radar Widget</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        radar: {
+                            black: '#050505',
+                            dark: '#0a0a0a',
+                            grid: '#1a1a1a',
+                            green: '#00ff41',
+                            greenDim: 'rgba(0, 255, 65, 0.2)',
+                            red: '#ff3333',
+                            white: '#e5e5e5'
+                        }
+                    },
+                    fontFamily: {
+                        loud: ['Teko', 'sans-serif'],
+                        tech: ['Share Tech Mono', 'monospace'],
+                    },
+                    animation: {
+                        'spin-slow': 'spin 4s linear infinite',
+                        'scan': 'scan 4s linear infinite',
+                        'flash': 'flash 2s infinite',
+                    },
+                    keyframes: {
+                        scan: {
+                            '0%': { transform: 'translateY(-100%)' },
+                            '100%': { transform: 'translateY(100%)' }
+                        },
+                        flash: {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: 0.5 }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: transparent;
+            color: #e5e5e5;
+            overflow: hidden;
+        }
+
+        .widget-container {
+            background-color: #050505;
+            background-image: 
+                linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            border: 1px solid #1a1a1a;
+            position: relative;
+        }
+
+        .radar-sweep {
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(0, 255, 65, 0.1) 200deg, rgba(0, 255, 65, 0.8) 360deg);
+            border-radius: 50%;
+        }
+
+        .crt-line {
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.1), rgba(255,255,255,0));
+            position: absolute;
+            width: 100%;
+            height: 10px;
+            z-index: 10;
+            animation: scanline 6s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes scanline {
+            0% { top: -10%; }
+            100% { top: 110%; }
+        }
+
+        .widget-container:hover {
+            border-color: #00ff41;
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.15);
+        }
+
+        .corner-accent {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-color: #00ff41;
+            border-style: solid;
+            transition: all 0.3s;
+        }
+        .tl { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+        .tr { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
+        .bl { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
+        .br { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+        .widget-container:hover .corner-accent {
+            width: 16px;
+            height: 16px;
+        }
+    </style>
+</head>
+<body class="p-4 flex items-center justify-center min-h-screen">
+
+    <!-- WIDGET START -->
+    <div id="widget" class="widget-container w-[320px] h-[400px] flex flex-col group overflow-hidden">
+        
+        <!-- CRT Scanline -->
+        <div class="crt-line"></div>
+
+        <!-- Corners -->
+        <div class="corner-accent tl"></div>
+        <div class="corner-accent tr"></div>
+        <div class="corner-accent bl"></div>
+        <div class="corner-accent br"></div>
+
+        <!-- Header -->
+        <div class="flex justify-between items-center p-3 border-b border-radar-grid bg-radar-dark/90 backdrop-blur">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-satellite-dish text-radar-green animate-pulse"></i>
+                <span class="font-loud text-xl tracking-widest text-white leading-none mt-1">SKRATCH<span class="text-radar-green">RADAR</span></span>
+            </div>
+            <div class="text-[10px] font-mono text-radar-green border border-radar-green px-1 rounded-sm animate-flash">
+                LIVE
+            </div>
+        </div>
+
+        <!-- Main Visual: Radar + Stats -->
+        <div class="flex-1 relative p-4 flex flex-col items-center justify-center">
+            
+            <!-- Radar Circle -->
+            <div class="relative w-32 h-32 mb-4">
+                <div class="absolute inset-0 border border-radar-greenDim rounded-full"></div>
+                <div class="absolute inset-2 border border-radar-greenDim rounded-full opacity-50"></div>
+                <div class="absolute inset-0 radar-sweep animate-spin-slow rounded-full"></div>
+                <!-- Crosshairs -->
+                <div class="absolute top-1/2 left-0 w-full h-[1px] bg-radar-greenDim"></div>
+                <div class="absolute left-1/2 top-0 h-full w-[1px] bg-radar-greenDim"></div>
+                
+                <!-- Blips - positioned dynamically -->
+                <div id="blips"></div>
+            </div>
+
+            <!-- Dynamic Content Area -->
+            <div class="w-full text-center relative z-10">
+                <div class="text-radar-greenDim text-[10px] tracking-widest mb-1">TARGET LOCKED</div>
+                
+                <div id="deal-container" class="transition-opacity duration-300 cursor-pointer hover:scale-105 transform">
+                    <h3 class="font-loud text-2xl text-white leading-none mb-1" id="deal-brand">LOADING...</h3>
+                    <p class="font-tech text-gray-400 text-xs mb-2 h-8 overflow-hidden" id="deal-desc">Scanning frequencies...</p>
+                    
+                    <div id="deal-badge" class="inline-flex items-center justify-center gap-2 bg-radar-grid px-3 py-1 border border-radar-grid group-hover:border-radar-green transition-colors">
+                        <span class="font-loud text-xl text-radar-green" id="deal-discount">--</span>
+                        <div id="code-divider" class="h-3 w-[1px] bg-gray-600 hidden"></div>
+                        <span class="font-mono text-xs text-white hidden" id="deal-code"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="absolute bottom-2 left-2 text-[8px] text-radar-grid font-mono">
+                <span id="stat-deals">--</span> DEALS<br>
+                <span id="stat-brands">--</span> BRANDS
+            </div>
+            
+            <div class="absolute bottom-2 right-2 text-[8px] text-gray-600 font-mono text-right">
+                <span id="stat-time">--:--:--</span>
+            </div>
+        </div>
+
+        <!-- Footer / CTAs -->
+        <div class="p-3 bg-radar-green/10 border-t border-radar-greenDim">
+            <div class="flex gap-2">
+                <button id="cta-deal" class="flex-1 flex justify-between items-center text-radar-green font-loud text-base tracking-widest uppercase hover:bg-radar-green/20 px-2 py-1 transition-colors">
+                    <span>Get Deal</span>
+                    <i class="fas fa-crosshairs text-xs"></i>
+                </button>
+                <div class="w-[1px] bg-radar-greenDim"></div>
+                <button id="cta-all" class="flex-1 flex justify-between items-center text-white font-loud text-base tracking-widest uppercase hover:bg-radar-green/20 hover:text-radar-green px-2 py-1 transition-colors">
+                    <span>All Deals</span>
+                    <i class="fas fa-chevron-right text-xs"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+    <!-- WIDGET END -->
+
+    <script>
+        // =================================================================
+        // CONFIG
+        // =================================================================
+        const API_URL = 'https://golf-promo-radar-production.up.railway.app/api/promos';
+        const RADAR_URL = 'https://golf-promo-radar-production.up.railway.app/';
+        
+        // =================================================================
+        // STATE
+        // =================================================================
+        let widgetDeals = [];
+        let currentIndex = 0;
+        let currentDealUrl = RADAR_URL;
+
+        // =================================================================
+        // ELEMENTS
+        // =================================================================
+        const widget = document.getElementById('widget');
+        const brandEl = document.getElementById('deal-brand');
+        const descEl = document.getElementById('deal-desc');
+        const discountEl = document.getElementById('deal-discount');
+        const codeEl = document.getElementById('deal-code');
+        const codeDivider = document.getElementById('code-divider');
+        const container = document.getElementById('deal-container');
+        const blipsEl = document.getElementById('blips');
+
+        // =================================================================
+        // CLICK HANDLERS
+        // =================================================================
+        document.getElementById('cta-deal').addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.open(currentDealUrl, '_blank');
+        });
+        
+        document.getElementById('cta-all').addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.open(RADAR_URL, '_blank');
+        });
+        
+        // Clicking the deal area also goes to current deal
+        container.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.open(currentDealUrl, '_blank');
+        });
+
+        // =================================================================
+        // FETCH LIVE DATA
+        // =================================================================
+        async function fetchDeals() {
+            try {
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                
+                // Update stats
+                document.getElementById('stat-deals').textContent = (data.promos?.length || 0) + (data.impactDeals?.length || 0);
+                document.getElementById('stat-brands').textContent = new Set([
+                    ...(data.promos || []).map(p => p.brand),
+                    ...(data.impactDeals || []).map(p => p.brand)
+                ]).size;
+                
+                // Build deals array - prioritize codes and high discounts
+                const deals = [];
+                
+                // Add promos with codes first (most valuable)
+                (data.promos || []).filter(p => p.code && p.promo).forEach(p => {
+                    const discount = p.promo.match(/(\d+)%/)?.[1];
+                    deals.push({
+                        brand: p.brand.toUpperCase(),
+                        desc: truncate(p.promo, 50),
+                        discount: discount ? `${discount}% OFF` : 'DEAL',
+                        code: p.code,
+                        url: p.affiliate_url || p.url || RADAR_URL,
+                        priority: discount ? parseInt(discount) + 100 : 100 // Codes get +100 priority
+                    });
+                });
+                
+                // Add high-value promos without codes
+                (data.promos || []).filter(p => !p.code && p.promo).forEach(p => {
+                    const discount = p.promo.match(/(\d+)%/)?.[1];
+                    if (discount && parseInt(discount) >= 30) {
+                        deals.push({
+                            brand: p.brand.toUpperCase(),
+                            desc: truncate(p.promo, 50),
+                            discount: `${discount}% OFF`,
+                            code: null,
+                            url: p.affiliate_url || p.url || RADAR_URL,
+                            priority: parseInt(discount)
+                        });
+                    }
+                });
+                
+                // Add Impact partner deals
+                (data.impactDeals || []).forEach(d => {
+                    deals.push({
+                        brand: d.brand.toUpperCase(),
+                        desc: truncate(d.promo, 50),
+                        discount: d.discount ? `${d.discount}% OFF` : 'PARTNER DEAL',
+                        code: null,
+                        url: d.affiliate_url || RADAR_URL,
+                        priority: d.discount || 20
+                    });
+                });
+                
+                // Sort by priority (highest first) and take top 10
+                deals.sort((a, b) => b.priority - a.priority);
+                widgetDeals = deals.slice(0, 10);
+                
+                // Generate random blips based on deal count
+                generateBlips(Math.min(deals.length, 8));
+                
+                // Show first deal
+                if (widgetDeals.length > 0) {
+                    showDeal(widgetDeals[0]);
+                }
+                
+            } catch (error) {
+                console.error('Failed to fetch deals:', error);
+                brandEl.textContent = 'SIGNAL LOST';
+                descEl.textContent = 'Reconnecting...';
+            }
+        }
+
+        function truncate(str, len) {
+            if (!str) return '';
+            return str.length > len ? str.substring(0, len) + '...' : str;
+        }
+
+        // =================================================================
+        // DISPLAY DEAL
+        // =================================================================
+        function showDeal(deal) {
+            currentDealUrl = deal.url;
+            
+            brandEl.textContent = deal.brand;
+            descEl.textContent = deal.desc;
+            discountEl.textContent = deal.discount;
+            
+            if (deal.code) {
+                codeEl.textContent = deal.code;
+                codeEl.classList.remove('hidden');
+                codeDivider.classList.remove('hidden');
+            } else {
+                codeEl.classList.add('hidden');
+                codeDivider.classList.add('hidden');
+            }
+            
+            // Cipher effect
+            cipherText(brandEl, deal.brand);
+            cipherText(discountEl, deal.discount);
+        }
+
+        // =================================================================
+        // CIPHER EFFECT
+        // =================================================================
+        function cipherText(element, finalString) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789%';
+            let iterations = 0;
+            const interval = setInterval(() => {
+                element.innerText = finalString.split('')
+                    .map((letter, index) => {
+                        if (index < iterations) return finalString[index];
+                        if (letter === ' ') return ' ';
+                        return chars[Math.floor(Math.random() * chars.length)];
+                    })
+                    .join('');
+                if (iterations >= finalString.length) clearInterval(interval);
+                iterations += 0.5;
+            }, 30);
+        }
+
+        // =================================================================
+        // CYCLE DEALS
+        // =================================================================
+        function cycleDeals() {
+            if (widgetDeals.length === 0) return;
+            
+            container.style.opacity = '0';
+            
+            setTimeout(() => {
+                currentIndex = (currentIndex + 1) % widgetDeals.length;
+                showDeal(widgetDeals[currentIndex]);
+                container.style.opacity = '1';
+            }, 300);
+        }
+
+        // =================================================================
+        // GENERATE BLIPS
+        // =================================================================
+        function generateBlips(count) {
+            blipsEl.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const blip = document.createElement('div');
+                const angle = Math.random() * 360;
+                const distance = 20 + Math.random() * 40;
+                const x = 64 + Math.cos(angle * Math.PI / 180) * distance;
+                const y = 64 + Math.sin(angle * Math.PI / 180) * distance;
+                const isRed = Math.random() > 0.7;
+                
+                blip.className = `absolute w-1.5 h-1.5 rounded-full animate-ping ${isRed ? 'bg-radar-red' : 'bg-radar-green'}`;
+                blip.style.left = `${x}px`;
+                blip.style.top = `${y}px`;
+                blip.style.animationDelay = `${Math.random() * 2}s`;
+                blipsEl.appendChild(blip);
+            }
+        }
+
+        // =================================================================
+        // CLOCK
+        // =================================================================
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('stat-time').textContent = now.toISOString().substr(11, 8);
+        }
+
+        // =================================================================
+        // INIT
+        // =================================================================
+        fetchDeals();
+        setInterval(cycleDeals, 4000);
+        setInterval(updateClock, 1000);
+        setInterval(fetchDeals, 5 * 60 * 1000); // Refresh data every 5 mins
+        updateClock();
+    </script>
+</body>
+</html>
