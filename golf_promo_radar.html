@@ -782,19 +782,21 @@
                 return;
             }
 
-            grid.innerHTML = codes.map(c => `
+            grid.innerHTML = codes.map(c => {
+                const linkUrl = c.affiliate_url || c.url || '#';
+                return `
                 <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
                     <div class="flex justify-between items-center">
                         <div>
-                            <h4 class="font-loud text-xl text-white">${c.brand}</h4>
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="font-loud text-xl text-white hover:text-radar-green transition-colors">${c.brand} <i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i></a>
                             <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}</p>
                         </div>
-                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-mono text-lg" onclick="copyCode('${c.code}', this)">
+                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-mono text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
                             ${c.code}
                         </div>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         // =================================================================
@@ -974,8 +976,10 @@
                 return;
             }
 
-            grid.innerHTML = offers.map(o => `
-                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
+            grid.innerHTML = offers.map(o => {
+                const linkUrl = o.affiliate_url || o.url || '#';
+                return `
+                <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 block">
                     <div class="flex items-center gap-4">
                         <div class="w-10 h-10 bg-radar-orange/20 rounded-full flex items-center justify-center">
                             <i class="fas fa-envelope text-radar-orange"></i>
@@ -984,9 +988,10 @@
                             <h4 class="font-loud text-xl text-white">${o.brand}</h4>
                             <p class="text-gray-400 text-sm">${o.offer}</p>
                         </div>
+                        <span class="text-radar-green text-sm font-bold group-hover:underline">Visit <i class="fas fa-chevron-right text-xs ml-1"></i></span>
                     </div>
-                </div>
-            `).join('');
+                </a>
+            `}).join('');
         }
 
         // =================================================================
