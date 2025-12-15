@@ -10,7 +10,7 @@ import re
 import os
 import threading
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
 from flask import Flask, jsonify, send_from_directory, request, session, Response
 from flask_cors import CORS
@@ -38,7 +38,195 @@ except ImportError:
 # =============================================================================
 REFRESH_INTERVAL_MINUTES = 10
 DATA_FILE = "promo_data.json"
+DEAL_HISTORY_FILE = "deal_history.json"
 PORT = int(os.environ.get("PORT", 5000))
+
+# Freshness settings
+DEAL_EXPIRE_HOURS = 24  # Remove deals not seen in this many hours
+DEAL_STALE_DAYS = 7     # Flag deals running for this many days as "always on"
+
+
+# =============================================================================
+# DEAL FRESHNESS TRACKING
+# =============================================================================
+def get_deal_key(deal):
+    """Generate unique key for a deal based on brand + promo text"""
+    brand = deal.get("brand", "").lower().strip()
+    promo = deal.get("promo", "") or deal.get("offer", "") or ""
+    # Normalize: remove extra spaces, lowercase
+    promo_normalized = re.sub(r'\s+', ' ', promo.lower().strip())
+    # Take first 100 chars to avoid minor text changes creating new deals
+    return f"{brand}:{promo_normalized[:100]}"
+
+
+def load_deal_history():
+    """Load deal history from file"""
+    if os.path.exists(DEAL_HISTORY_FILE):
+        try:
+            with open(DEAL_HISTORY_FILE) as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def save_deal_history(history):
+    """Save deal history to file"""
+    with open(DEAL_HISTORY_FILE, "w") as f:
+        json.dump(history, f, indent=2)
+
+
+def parse_expiration_date(promo_text):
+    """Try to extract expiration date from promo text"""
+    if not promo_text:
+        return None
+    
+    text = promo_text.lower()
+    now = datetime.now()
+    
+    # Patterns like "ends 12/20", "through 12/20", "expires 12/20"
+    date_patterns = [
+        r'(?:ends?|through|until|expires?|thru)\s+(\d{1,2})[/\-](\d{1,2})(?:[/\-](\d{2,4}))?',
+        r'(?:ends?|through|until|expires?|thru)\s+(\d{1,2})[/\-](\d{1,2})',
+    ]
+    
+    for pattern in date_patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                month = int(match.group(1))
+                day = int(match.group(2))
+                year = now.year
+                if match.lastindex >= 3 and match.group(3):
+                    year = int(match.group(3))
+                    if year < 100:
+                        year += 2000
+                
+                exp_date = datetime(year, month, day, 23, 59, 59)
+                # If date is in past and month is less than current, assume next year
+                if exp_date < now and month < now.month:
+                    exp_date = datetime(year + 1, month, day, 23, 59, 59)
+                return exp_date.isoformat()
+            except:
+                pass
+    
+    # Day-based patterns like "ends Sunday", "ends tomorrow"
+    day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    for i, day in enumerate(day_names):
+        if f'ends {day}' in text or f'through {day}' in text or f'until {day}' in text:
+            # Calculate next occurrence of that day
+            days_ahead = i - now.weekday()
+            if days_ahead <= 0:  # Target day already happened this week
+                days_ahead += 7
+            exp_date = now + timedelta(days=days_ahead)
+            return exp_date.replace(hour=23, minute=59, second=59).isoformat()
+    
+    # "ends today", "today only"
+    if 'today only' in text or 'ends today' in text:
+        return now.replace(hour=23, minute=59, second=59).isoformat()
+    
+    # "ends tomorrow"
+    if 'ends tomorrow' in text or 'tomorrow only' in text:
+        return (now + timedelta(days=1)).replace(hour=23, minute=59, second=59).isoformat()
+    
+    # "this weekend", "weekend only"
+    if 'this weekend' in text or 'weekend only' in text:
+        days_until_sunday = 6 - now.weekday()
+        if days_until_sunday < 0:
+            days_until_sunday += 7
+        exp_date = now + timedelta(days=days_until_sunday)
+        return exp_date.replace(hour=23, minute=59, second=59).isoformat()
+    
+    # "limited time" - give it 3 days
+    if 'limited time' in text:
+        return (now + timedelta(days=3)).replace(hour=23, minute=59, second=59).isoformat()
+    
+    return None
+
+
+def update_deal_history(deals, history):
+    """
+    Update deal history with current deals.
+    Returns (updated_history, fresh_deals) where fresh_deals have freshness metadata.
+    """
+    now = datetime.now()
+    now_iso = now.isoformat()
+    
+    # Track which deals we see this scan
+    seen_keys = set()
+    
+    fresh_deals = []
+    
+    for deal in deals:
+        key = get_deal_key(deal)
+        seen_keys.add(key)
+        
+        promo_text = deal.get("promo") or deal.get("offer") or ""
+        
+        if key in history:
+            # Existing deal - update last_seen
+            history[key]["last_seen"] = now_iso
+            history[key]["times_seen"] = history[key].get("times_seen", 1) + 1
+            first_seen = datetime.fromisoformat(history[key]["first_seen"])
+        else:
+            # New deal
+            history[key] = {
+                "first_seen": now_iso,
+                "last_seen": now_iso,
+                "times_seen": 1,
+                "brand": deal.get("brand"),
+                "promo_preview": promo_text[:60]
+            }
+            first_seen = now
+        
+        # Parse expiration if not already set
+        if "expires" not in history[key] or not history[key]["expires"]:
+            history[key]["expires"] = parse_expiration_date(promo_text)
+        
+        # Calculate freshness metadata
+        deal_age_hours = (now - first_seen).total_seconds() / 3600
+        deal_age_days = deal_age_hours / 24
+        
+        # Check if expired by parsed date
+        expires = history[key].get("expires")
+        is_expired = False
+        if expires:
+            try:
+                exp_date = datetime.fromisoformat(expires)
+                is_expired = now > exp_date
+            except:
+                pass
+        
+        # Add freshness metadata to deal
+        deal_with_meta = deal.copy()
+        deal_with_meta["first_seen"] = history[key]["first_seen"]
+        deal_with_meta["last_seen"] = history[key]["last_seen"]
+        deal_with_meta["times_seen"] = history[key]["times_seen"]
+        deal_with_meta["is_new"] = deal_age_hours < 24
+        deal_with_meta["is_stale"] = deal_age_days > DEAL_STALE_DAYS
+        deal_with_meta["is_expired"] = is_expired
+        deal_with_meta["expires"] = expires
+        
+        # Only include if not expired
+        if not is_expired:
+            fresh_deals.append(deal_with_meta)
+    
+    # Remove deals not seen in DEAL_EXPIRE_HOURS
+    expired_keys = []
+    for key, data in history.items():
+        if key not in seen_keys:
+            last_seen = datetime.fromisoformat(data["last_seen"])
+            hours_since = (now - last_seen).total_seconds() / 3600
+            if hours_since > DEAL_EXPIRE_HOURS:
+                expired_keys.append(key)
+    
+    for key in expired_keys:
+        del history[key]
+    
+    if expired_keys:
+        print(f"🧹 Cleaned up {len(expired_keys)} stale deals from history")
+    
+    return history, fresh_deals
 
 # =============================================================================
 # FULL BRAND LIST - 170+ Golf Brands
@@ -321,7 +509,6 @@ class ImpactAPI:
     
     def get_actions(self, start_date=None, end_date=None):
         """Get conversion actions (sales/leads)"""
-        from datetime import datetime, timedelta
         if not start_date:
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
         if not end_date:
@@ -339,7 +526,6 @@ class ImpactAPI:
     
     def get_action_inquiries(self, start_date=None, end_date=None):
         """Get action inquiries (pending conversions)"""
-        from datetime import datetime, timedelta
         if not start_date:
             start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00Z")
         if not end_date:
@@ -357,8 +543,6 @@ class ImpactAPI:
     
     def get_performance_report(self, days=30):
         """Get aggregated performance data"""
-        from datetime import datetime, timedelta
-        
         campaigns = self.get_campaigns()
         actions = self.get_actions()
         
@@ -1266,33 +1450,72 @@ def scan_sale_pages(brands):
 
 
 def save_data(promos, clearance=None, impact_deals=None):
-    """Save scraped data to file"""
+    """Save scraped data to file with freshness tracking"""
     active_promos = [p for p in promos if p.get("promo")]
+    
+    # Load deal history
+    history = load_deal_history()
+    
+    # Update history and get fresh promos
+    history, fresh_promos = update_deal_history(active_promos, history)
+    
+    # Also process clearance deals
+    fresh_clearance = []
+    if clearance:
+        history, fresh_clearance = update_deal_history(clearance, history)
+    
+    # Also process impact deals
+    fresh_impact = []
+    if impact_deals:
+        history, fresh_impact = update_deal_history(impact_deals, history)
+    
+    # Save updated history
+    save_deal_history(history)
     
     # Get current critical hit index and increment
     current_data = load_data()
     critical_hit_index = current_data.get("criticalHitIndex", 0) + 1
     
+    # Count new deals
+    new_promos = sum(1 for p in fresh_promos if p.get("is_new"))
+    new_clearance = sum(1 for c in fresh_clearance if c.get("is_new"))
+    new_impact = sum(1 for d in fresh_impact if d.get("is_new"))
+    
     data = {
         "lastUpdated": datetime.now().isoformat(),
         "criticalHitIndex": critical_hit_index,
-        "promos": active_promos,
+        "promos": fresh_promos,
         "codes": [
-            {"brand": p["brand"], "code": p["code"], "discount": p["promo"][:60], "url": p.get("url"), "affiliate_url": p.get("affiliate_url")}
-            for p in active_promos if p.get("code")
+            {
+                "brand": p["brand"], 
+                "code": p["code"], 
+                "discount": p["promo"][:60], 
+                "url": p.get("url"), 
+                "affiliate_url": p.get("affiliate_url"),
+                "is_new": p.get("is_new", False),
+                "first_seen": p.get("first_seen"),
+                "expires": p.get("expires")
+            }
+            for p in fresh_promos if p.get("code")
         ],
         "emailOffers": [
-            {"brand": p["brand"], "offer": p["email_offer"], "method": "Website", "url": p.get("url"), "affiliate_url": p.get("affiliate_url")}
+            {
+                "brand": p["brand"], 
+                "offer": p["email_offer"], 
+                "method": "Website", 
+                "url": p.get("url"), 
+                "affiliate_url": p.get("affiliate_url")
+            }
             for p in promos if p.get("email_offer")
         ],
-        "clearance": clearance or [],
-        "impactDeals": impact_deals or []
+        "clearance": fresh_clearance,
+        "impactDeals": fresh_impact
     }
     
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
     
-    print(f"💾 Saved: {len(active_promos)} promos, {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(data['clearance'])} clearance, {len(data['impactDeals'])} impact deals")
+    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new)")
 
 
 def load_data():
