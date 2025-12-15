@@ -194,6 +194,27 @@
     <!-- CRT Effect Overlay -->
     <div class="crt-overlay fixed inset-0 z-50 h-full w-full"></div>
 
+    <!-- Incoming Transmission Popup -->
+    <div id="transmission-popup" class="fixed top-20 left-1/2 -translate-x-1/2 bg-radar-dark border-2 border-radar-red px-8 py-4 z-[100] shadow-[0_0_30px_rgba(255,51,51,0.3)] transition-all duration-500 opacity-0 -translate-y-10 pointer-events-none">
+        <button onclick="dismissTransmission()" class="absolute top-2 right-2 text-gray-600 hover:text-white text-xl">&times;</button>
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-radar-red/20 rounded-full flex items-center justify-center animate-pulse">
+                <i class="fas fa-satellite-dish text-radar-red text-2xl"></i>
+            </div>
+            <div>
+                <div class="text-radar-red font-loud text-xl tracking-widest animate-pulse">
+                    ⚡ INCOMING TRANSMISSION
+                </div>
+                <div id="transmission-brand" class="text-white font-loud text-2xl">
+                    BRAND NAME
+                </div>
+                <div id="transmission-detail" class="text-radar-green font-bold tracking-widest font-mono">
+                    DEAL DETAILS
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Navigation / Header -->
     <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -507,7 +528,7 @@
                 GOLF PROMO <span class="text-radar-green">RADAR</span>
             </div>
             <p class="text-gray-600 text-xs font-mono uppercase tracking-widest">
-                Scanning 170+ Brand Homepages • Auto-Updating Every 5 Mins • Skratch Golf Aesthetics
+                Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins • Skratch Golf Aesthetics
             </p>
         </div>
     </footer>
@@ -520,6 +541,108 @@
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
+        let seenDeals = JSON.parse(localStorage.getItem('seenDeals') || '{}');
+        let transmissionQueue = [];
+        let isShowingTransmission = false;
+
+        // =================================================================
+        // INCOMING TRANSMISSION SYSTEM
+        // =================================================================
+        function getDealKey(deal) {
+            return `${deal.brand}-${deal.promo || deal.code || deal.offer || ''}`.toLowerCase().replace(/\s+/g, '-');
+        }
+
+        function checkForNewDeals(data) {
+            const newDeals = [];
+            
+            // Check promos with codes (most exciting)
+            (data.codes || []).forEach(c => {
+                const key = getDealKey({ brand: c.brand, promo: c.code });
+                if (!seenDeals[key]) {
+                    seenDeals[key] = Date.now();
+                    newDeals.push({
+                        brand: c.brand,
+                        detail: `CODE: ${c.code}`,
+                        type: 'code'
+                    });
+                }
+            });
+            
+            // Check high-value promos (40%+ off)
+            (data.promos || []).filter(p => p.promo).forEach(p => {
+                const key = getDealKey(p);
+                const discount = p.promo?.match(/(\d+)%/)?.[1];
+                if (!seenDeals[key] && discount && parseInt(discount) >= 40) {
+                    seenDeals[key] = Date.now();
+                    newDeals.push({
+                        brand: p.brand,
+                        detail: p.promo,
+                        type: 'promo'
+                    });
+                }
+            });
+            
+            // Save seen deals (keep last 500)
+            const keys = Object.keys(seenDeals);
+            if (keys.length > 500) {
+                const sorted = keys.sort((a, b) => seenDeals[a] - seenDeals[b]);
+                sorted.slice(0, keys.length - 500).forEach(k => delete seenDeals[k]);
+            }
+            localStorage.setItem('seenDeals', JSON.stringify(seenDeals));
+            
+            return newDeals;
+        }
+
+        function showTransmission(deal) {
+            const popup = document.getElementById('transmission-popup');
+            document.getElementById('transmission-brand').textContent = deal.brand.toUpperCase();
+            document.getElementById('transmission-detail').textContent = deal.detail;
+            
+            // Red flash effect
+            const flash = document.createElement('div');
+            flash.className = 'fixed inset-0 bg-radar-red/10 z-[99] pointer-events-none';
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 200);
+            
+            // Show popup
+            popup.classList.remove('opacity-0', '-translate-y-10', 'pointer-events-none');
+            popup.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+            isShowingTransmission = true;
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                dismissTransmission();
+            }, 5000);
+        }
+
+        function dismissTransmission() {
+            const popup = document.getElementById('transmission-popup');
+            popup.classList.add('opacity-0', '-translate-y-10', 'pointer-events-none');
+            popup.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+            isShowingTransmission = false;
+            
+            // Show next in queue after a short delay
+            setTimeout(() => {
+                if (transmissionQueue.length > 0 && !isShowingTransmission) {
+                    showTransmission(transmissionQueue.shift());
+                }
+            }, 800);
+        }
+
+        function queueTransmissions(newDeals) {
+            if (newDeals.length === 0) return;
+            
+            // Add to queue
+            transmissionQueue.push(...newDeals);
+            
+            // Start showing if not already
+            if (!isShowingTransmission) {
+                showTransmission(transmissionQueue.shift());
+            }
+            
+            // Log it
+            log(`⚡ NEW TRANSMISSION: ${newDeals.length} deal(s) detected`);
+        }
 
         // =================================================================
         // ZULU CLOCK
@@ -548,11 +671,29 @@
         // =================================================================
         // FETCH DATA
         // =================================================================
-        async function fetchData() {
+        async function fetchData(isInitialLoad = false) {
             try {
                 log('FETCHING BRAND DATA...');
                 const response = await fetch('/api/promos');
                 const data = await response.json();
+                
+                // Check for new deals (skip on initial page load)
+                if (!isInitialLoad) {
+                    const newDeals = checkForNewDeals(data);
+                    if (newDeals.length > 0) {
+                        queueTransmissions(newDeals);
+                    }
+                } else {
+                    // On initial load, just mark all current deals as seen
+                    (data.codes || []).forEach(c => {
+                        seenDeals[getDealKey({ brand: c.brand, promo: c.code })] = Date.now();
+                    });
+                    (data.promos || []).filter(p => p.promo).forEach(p => {
+                        seenDeals[getDealKey(p)] = Date.now();
+                    });
+                    localStorage.setItem('seenDeals', JSON.stringify(seenDeals));
+                }
+                
                 promoData = data;
                 
                 log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
@@ -829,7 +970,7 @@
                     <div class="col-span-2 text-center py-20 text-gray-600">
                         <i class="fas fa-tags text-4xl mb-4"></i>
                         <div class="font-loud text-2xl">NO CLEARANCE ITEMS DETECTED</div>
-                        <div class="text-sm mt-2">Sale pages are scanned every 5 minutes</div>
+                        <div class="text-sm mt-2">Sale pages are scanned every 10 minutes</div>
                     </div>
                 `;
                 return;
@@ -1154,100 +1295,6 @@
         }
 
         // =================================================================
-        // NEW CODE DETECTION
-        // =================================================================
-        function getSeenCodes() {
-            try {
-                return JSON.parse(localStorage.getItem('seenCodes') || '[]');
-            } catch {
-                return [];
-            }
-        }
-
-        function saveSeenCodes(codes) {
-            localStorage.setItem('seenCodes', JSON.stringify(codes));
-        }
-
-        function checkForNewCodes(newCodes) {
-            const seenCodes = getSeenCodes();
-            const newOnes = newCodes.filter(c => !seenCodes.includes(c.code));
-            
-            if (newOnes.length > 0 && seenCodes.length > 0) {
-                newOnes.forEach(code => {
-                    showNewCodeAlert(code);
-                    highlightNewCode(code.code);
-                });
-            }
-            
-            saveSeenCodes(newCodes.map(c => c.code));
-            return newOnes;
-        }
-
-        function showNewCodeAlert(code) {
-            const alert = document.createElement('div');
-            alert.className = 'fixed top-20 left-1/2 -translate-x-1/2 bg-radar-dark border-2 border-radar-red px-8 py-4 z-[100] transform -translate-y-20 opacity-0 transition-all duration-500';
-            alert.innerHTML = `
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 bg-radar-red/20 rounded-full flex items-center justify-center animate-pulse">
-                        <i class="fas fa-satellite-dish text-radar-red text-2xl"></i>
-                    </div>
-                    <div>
-                        <div class="text-radar-red font-loud text-xl tracking-widest animate-pulse">⚡ INCOMING TRANSMISSION</div>
-                        <div class="text-white font-loud text-2xl">${code.brand}</div>
-                        <div class="text-radar-green font-bold tracking-widest">${code.code}</div>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(alert);
-            
-            requestAnimationFrame(() => {
-                alert.classList.remove('-translate-y-20', 'opacity-0');
-                alert.classList.add('translate-y-0', 'opacity-100');
-            });
-            
-            const flash = document.createElement('div');
-            flash.className = 'fixed inset-0 bg-radar-red/10 z-[99] pointer-events-none';
-            document.body.appendChild(flash);
-            setTimeout(() => flash.remove(), 200);
-            
-            setTimeout(() => {
-                alert.classList.add('-translate-y-20', 'opacity-0');
-                setTimeout(() => alert.remove(), 500);
-            }, 5000);
-        }
-
-        function highlightNewCode(code) {
-            setTimeout(() => {
-                const cards = document.querySelectorAll('a.deal-card');
-                cards.forEach(card => {
-                    if (card.dataset.code === code) {
-                        card.classList.add('new-code-highlight');
-                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        setTimeout(() => card.classList.remove('new-code-highlight'), 10000);
-                    }
-                });
-            }, 500);
-        }
-
-        async function fetchDataWithCodeCheck() {
-            try {
-                const response = await fetch('/api/promos');
-                const newData = await response.json();
-                
-                if (newData.codes && newData.codes.length > 0) {
-                    checkForNewCodes(newData.codes);
-                }
-                
-                promoData = newData;
-                updateUI();
-                updateBlips();
-                updateMarquee();
-            } catch (error) {
-                console.error('Failed to fetch:', error);
-            }
-        }
-
-        // =================================================================
         // GREEN FLASH = Cards WITH promo codes (most actionable)
         // =================================================================
         setInterval(() => {
@@ -1268,8 +1315,8 @@
         // =================================================================
         // INIT
         // =================================================================
-        fetchData();
-        setInterval(fetchDataWithCodeCheck, 5 * 60 * 1000);
+        fetchData(true); // Initial load - don't show transmissions
+        setInterval(() => fetchData(false), 10 * 60 * 1000); // Refresh every 10 mins - show new transmissions
     </script>
 </body>
 </html>
