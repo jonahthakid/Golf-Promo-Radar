@@ -2,6 +2,7 @@
 """
 SKRATCH RADAR - Golf Promo Scraper Backend
 Scans 170+ golf brands for promos, codes, and email offers
+Integrates with Impact Radius for affiliate tracking + deals
 """
 
 import json
@@ -15,6 +16,14 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
+
+# =============================================================================
+# IMPACT RADIUS CONFIG
+# =============================================================================
+IMPACT_ENABLED = True
+IMPACT_MEDIA_PARTNER_ID = "5770409"
+IMPACT_ACCOUNT_SID = "IRegUCDRRCRj5770409FimSuCrN9KE65z1"
+IMPACT_AUTH_TOKEN = "LMwc6y~ALQvsLtN_UorwhsXV6eFEyVPD"
 
 # Import affiliate links (create affiliate_urls.py with your links)
 try:
@@ -234,10 +243,189 @@ BRANDS = [
     {"name": "Golfers Warehouse", "url": "https://www.golferswarehouse.com", "category": "retailer", "tags": ["northeast"]},
     {"name": "Dick's Sporting Goods", "url": "https://www.dickssportinggoods.com/f/golf", "category": "retailer", "tags": ["big-box"]},
     {"name": "Amazon Golf", "url": "https://www.amazon.com/golf/b?node=3410851", "category": "retailer", "tags": ["marketplace"]},
+    
+    # ==========================================================================
+    # IMPACT PARTNER BRANDS (auto-added from Impact Radius)
+    # ==========================================================================
+    {"name": "Mizzen+Main", "url": "https://www.mizzenandmain.com", "category": "apparel", "tags": ["premium", "dress-shirts", "impact"]},
+    {"name": "Boston Scally", "url": "https://www.bostonscally.com", "category": "accessories", "tags": ["hats", "caps", "impact"]},
+    {"name": "Stewart Golf", "url": "https://www.stewartgolfusa.com", "category": "equipment", "tags": ["push-carts", "electric", "impact"]},
+    {"name": "Scheels", "url": "https://www.scheels.com/c/golf", "category": "retailer", "tags": ["big-box", "midwest", "impact"]},
+    {"name": "Sounder Golf", "url": "https://www.soundergolf.com", "category": "apparel", "tags": ["lifestyle", "modern", "impact"]},
+    {"name": "Rapsodo", "url": "https://rapsodo.com", "category": "tech", "tags": ["launch-monitor", "simulator", "impact"]},
+    {"name": "Five Iron Golf", "url": "https://fiveirongolf.com", "category": "experience", "tags": ["simulator", "urban", "impact"]},
 ]
 
 # Merge affiliate links into brands list
 BRANDS = merge_affiliate_links(BRANDS)
+
+# =============================================================================
+# IMPACT RADIUS API INTEGRATION
+# =============================================================================
+class ImpactAPI:
+    """Impact Radius API client for fetching campaigns, ads, and tracking links"""
+    
+    def __init__(self):
+        self.media_partner_id = IMPACT_MEDIA_PARTNER_ID
+        self.account_sid = IMPACT_ACCOUNT_SID
+        self.auth_token = IMPACT_AUTH_TOKEN
+        self.base_url = f"https://api.impact.com/Mediapartners/{self.account_sid}"
+        self.session = requests.Session()
+        self.session.auth = (self.account_sid, self.auth_token)
+        self.session.headers.update({
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        })
+        # Cache
+        self._campaigns = None
+        self._ads = None
+        self._tracking_links = {}
+    
+    def _get(self, endpoint, params=None):
+        """Make GET request to Impact API"""
+        url = f"{self.base_url}/{endpoint}"
+        try:
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Impact API Error: {e}")
+            return None
+    
+    def get_campaigns(self, force_refresh=False):
+        """Get all active campaigns (cached)"""
+        if self._campaigns is None or force_refresh:
+            data = self._get("Campaigns", {"PageSize": 100})
+            if data and "Campaigns" in data:
+                self._campaigns = data["Campaigns"]
+            else:
+                self._campaigns = []
+        return self._campaigns
+    
+    def get_ads(self, force_refresh=False):
+        """Get all available ads/deals (cached)"""
+        if self._ads is None or force_refresh:
+            all_ads = []
+            page = 1
+            while True:
+                data = self._get("Ads", {"PageSize": 100, "Page": page})
+                if data and "Ads" in data:
+                    all_ads.extend(data["Ads"])
+                    if len(data["Ads"]) < 100:
+                        break
+                    page += 1
+                else:
+                    break
+            self._ads = all_ads
+        return self._ads
+    
+    def get_tracking_link_for_brand(self, brand_name):
+        """Get tracking link for a brand by matching campaign name"""
+        if brand_name in self._tracking_links:
+            return self._tracking_links[brand_name]
+        
+        campaigns = self.get_campaigns()
+        brand_lower = brand_name.lower().replace(" golf", "").replace("golf ", "").strip()
+        
+        for campaign in campaigns:
+            campaign_name = campaign.get("CampaignName", "").lower()
+            advertiser_name = campaign.get("AdvertiserName", "").lower()
+            
+            # Try to match
+            for name in [campaign_name, advertiser_name]:
+                name_clean = name.replace(" golf", "").replace("golf ", "").strip()
+                if brand_lower in name_clean or name_clean in brand_lower:
+                    link = campaign.get("TrackingLink", "")
+                    if link:
+                        self._tracking_links[brand_name] = link
+                        return link
+        
+        return None
+    
+    def get_deals_for_brand(self, brand_name):
+        """Get any deals/promos from Impact for a brand"""
+        deals = []
+        ads = self.get_ads()
+        brand_lower = brand_name.lower().replace(" golf", "").replace("golf ", "").strip()
+        
+        for ad in ads:
+            campaign_name = ad.get("CampaignName", "").lower()
+            if brand_lower in campaign_name or campaign_name.replace(" golf", "").strip() in brand_lower:
+                description = ad.get("Description", "")
+                if description and len(description) > 10:
+                    # Filter out generic product descriptions
+                    if any(word in description.lower() for word in ['off', 'save', 'free', 'discount', '%', 'sale']):
+                        deals.append({
+                            "text": description,
+                            "link": ad.get("TrackingLink", ""),
+                            "type": ad.get("Type", "TEXT_LINK")
+                        })
+        
+        return deals
+    
+    def get_all_deals(self):
+        """Get all deals from Impact, formatted for Radar"""
+        all_deals = []
+        ads = self.get_ads()
+        campaigns = {c.get("CampaignId"): c for c in self.get_campaigns()}
+        
+        for ad in ads:
+            description = ad.get("Description", "")
+            # Only include if it looks like a real deal
+            if description and len(description) > 10:
+                if any(word in description.lower() for word in ['off', 'save', 'free', 'discount', '%', 'sale', 'refer']):
+                    campaign_name = ad.get("CampaignName", "Unknown")
+                    tracking_link = ad.get("TrackingLink", "")
+                    
+                    # Extract discount percentage if present
+                    discount_match = re.search(r'(\d+)%', description)
+                    discount = int(discount_match.group(1)) if discount_match else 0
+                    
+                    all_deals.append({
+                        "brand": campaign_name,
+                        "promo": description[:150],
+                        "discount": discount,
+                        "affiliate_url": tracking_link,
+                        "source": "impact",
+                        "type": "impact_deal"
+                    })
+        
+        return all_deals
+
+
+# Global Impact API instance
+impact_api = None
+if IMPACT_ENABLED:
+    try:
+        impact_api = ImpactAPI()
+        print("✅ Impact Radius API initialized")
+    except Exception as e:
+        print(f"⚠️  Impact API init failed: {e}")
+        impact_api = None
+
+
+def merge_impact_tracking_links(brands):
+    """Merge Impact tracking links into brands that don't have affiliate URLs"""
+    if not impact_api:
+        return brands
+    
+    updated = 0
+    for brand in brands:
+        if not brand.get("affiliate_url"):
+            tracking_link = impact_api.get_tracking_link_for_brand(brand["name"])
+            if tracking_link:
+                brand["affiliate_url"] = tracking_link
+                updated += 1
+    
+    if updated > 0:
+        print(f"✅ Added {updated} Impact tracking links to brands")
+    
+    return brands
+
+
+# Merge Impact tracking links
+if IMPACT_ENABLED and impact_api:
+    BRANDS = merge_impact_tracking_links(BRANDS)
 
 # =============================================================================
 # DETECTION PATTERNS
@@ -777,6 +965,7 @@ def run_scraper():
     
     results = []
     clearance_results = []
+    impact_deals = []
     success_count = 0
     error_count = 0
     
@@ -807,13 +996,28 @@ def run_scraper():
         print(f"⚠️  Sale page scan failed: {e}")
         clearance_results = []
     
+    # Fetch Impact deals
     print(f"\n{'='*60}")
-    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {error_count} errors")
+    print(f"🔗 Fetching Impact Radius deals...")
+    print(f"{'='*60}")
+    
+    try:
+        if impact_api:
+            impact_deals = impact_api.get_all_deals()
+            print(f"✅ Found {len(impact_deals)} deals from Impact")
+        else:
+            print("⚠️  Impact API not available")
+    except Exception as e:
+        print(f"⚠️  Impact deals fetch failed: {e}")
+        impact_deals = []
+    
+    print(f"\n{'='*60}")
+    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {error_count} errors")
     print(f"{'='*60}\n")
     
-    # Always save main results even if clearance fails
+    # Always save main results even if clearance/impact fails
     if results:
-        save_data(results, clearance_results)
+        save_data(results, clearance_results, impact_deals)
     
     return results
 
@@ -969,12 +1173,17 @@ def scan_sale_pages(brands):
     return clearance
 
 
-def save_data(promos, clearance=None):
+def save_data(promos, clearance=None, impact_deals=None):
     """Save scraped data to file"""
     active_promos = [p for p in promos if p.get("promo")]
     
+    # Get current critical hit index and increment
+    current_data = load_data()
+    critical_hit_index = current_data.get("criticalHitIndex", 0) + 1
+    
     data = {
         "lastUpdated": datetime.now().isoformat(),
+        "criticalHitIndex": critical_hit_index,
         "promos": active_promos,
         "codes": [
             {"brand": p["brand"], "code": p["code"], "discount": p["promo"][:60]}
@@ -984,13 +1193,14 @@ def save_data(promos, clearance=None):
             {"brand": p["brand"], "offer": p["email_offer"], "method": "Website"}
             for p in promos if p.get("email_offer")
         ],
-        "clearance": clearance or []
+        "clearance": clearance or [],
+        "impactDeals": impact_deals or []
     }
     
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
     
-    print(f"💾 Saved: {len(active_promos)} promos, {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(data['clearance'])} clearance")
+    print(f"💾 Saved: {len(active_promos)} promos, {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(data['clearance'])} clearance, {len(data['impactDeals'])} impact deals")
 
 
 def load_data():
@@ -998,16 +1208,24 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE) as f:
-                return json.load(f)
+                data = json.load(f)
+                # Ensure keys exist (for backward compatibility)
+                if "impactDeals" not in data:
+                    data["impactDeals"] = []
+                if "criticalHitIndex" not in data:
+                    data["criticalHitIndex"] = 0
+                return data
         except:
             pass
     
     return {
         "lastUpdated": datetime.now().isoformat(),
+        "criticalHitIndex": 0,
         "promos": [],
         "codes": [],
         "emailOffers": [],
-        "clearance": []
+        "clearance": [],
+        "impactDeals": []
     }
 
 
