@@ -364,7 +364,7 @@
             </div>
 
             <!-- Tabs -->
-            <div class="flex gap-2 mb-2">
+            <div class="flex gap-2 mb-2 flex-wrap">
                 <button onclick="switchTab('promos')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-radar-green text-radar-green" data-tab="promos">
                     PROMOS
                 </button>
@@ -373,6 +373,9 @@
                 </button>
                 <button onclick="switchTab('clearance')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="clearance">
                     CLEARANCE
+                </button>
+                <button onclick="switchTab('impact')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="impact">
+                    <i class="fas fa-handshake mr-1"></i>PARTNER DEALS
                 </button>
                 <button onclick="switchTab('email')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="email">
                     EMAIL OFFERS
@@ -513,7 +516,7 @@
         // =================================================================
         // STATE
         // =================================================================
-        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [] };
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [] };
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -555,6 +558,7 @@
                 log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
                 log(`CODES EXTRACTED: ${data.codes?.length || 0}`);
                 log(`CLEARANCE ITEMS: ${data.clearance?.length || 0}`);
+                log(`PARTNER DEALS: ${data.impactDeals?.length || 0}`);
                 log(`EMAIL OFFERS: ${data.emailOffers?.length || 0}`);
                 
                 updateUI();
@@ -597,6 +601,7 @@
             if (currentTab === 'promos') renderPromos();
             else if (currentTab === 'codes') renderCodes();
             else if (currentTab === 'clearance') renderClearance();
+            else if (currentTab === 'impact') renderImpactDeals();
             else if (currentTab === 'email') renderEmail();
         }
 
@@ -634,12 +639,20 @@
                 return getDiscount(b) - getDiscount(a);
             });
 
-            // Featured (highest discount)
+            // Featured (rotates through high-discount promos on each scan)
             if (promos.length > 0 && !searchQuery) {
-                const top = promos[0];
-                const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
+                // Get all promos with 40%+ discount
+                const criticalHits = promos.filter(p => {
+                    const discount = p.promo?.match(/(\d+)%/)?.[1];
+                    return discount && parseInt(discount) >= 40;
+                });
                 
-                if (discount >= 40) {
+                if (criticalHits.length > 0) {
+                    // Use criticalHitIndex from backend to rotate
+                    const rotationIndex = (promoData.criticalHitIndex || 0) % criticalHits.length;
+                    const top = criticalHits[rotationIndex];
+                    const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
+                    
                     const linkUrl = top.affiliate_url || top.url;
                     const hasLogo = top.image && !top.image.includes('data:');
                     featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
@@ -669,7 +682,8 @@
                             </a>
                         </div>
                     `;
-                    promos = promos.slice(1);
+                    // Remove the featured item from the grid
+                    promos = promos.filter(p => p.brand !== top.brand || p.promo !== top.promo);
                 } else {
                     featured.className = 'hidden';
                     featured.innerHTML = '';
@@ -860,6 +874,80 @@
         }
 
         // =================================================================
+        // RENDER IMPACT/PARTNER DEALS
+        // =================================================================
+        function renderImpactDeals() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let deals = promoData.impactDeals || [];
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                const categoryMap = {
+                    'apparel': ['mizzen', 'travis', 'malbon', 'sunday', 'sounder', 'j.lindeberg'],
+                    'footwear': ['duca'],
+                    'equipment': ['taylormade', 'wilson', 'stewart', 'rapsodo', 'sun mountain'],
+                    'accessories': ['stitch', 'boston scally', 'seamus'],
+                };
+                const keywords = categoryMap[currentFilter] || [];
+                if (keywords.length > 0) {
+                    deals = deals.filter(d => {
+                        const brandLower = d.brand?.toLowerCase() || '';
+                        return keywords.some(k => brandLower.includes(k));
+                    });
+                }
+            }
+            
+            // Search filter
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                deals = deals.filter(d => 
+                    d.brand?.toLowerCase().includes(q) ||
+                    d.promo?.toLowerCase().includes(q)
+                );
+            }
+            
+            // Sort by discount (highest first)
+            deals.sort((a, b) => (b.discount || 0) - (a.discount || 0));
+
+            if (deals.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-handshake text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO PARTNER DEALS AVAILABLE</div>
+                        <div class="text-sm mt-2">Partner deals are pulled from Impact Radius</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = deals.map(d => {
+                const linkUrl = d.affiliate_url || '#';
+                const discount = d.discount || 0;
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300">
+                        ${discount >= 30 ? '<div class="absolute top-0 right-0 bg-radar-red text-white text-[10px] font-bold px-2 py-1 animate-pulse">HOT</div>' : ''}
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 bg-white rounded flex items-center justify-center flex-shrink-0 p-1">
+                                <i class="fas fa-tag text-radar-dark"></i>
+                            </div>
+                            <div class="flex-grow min-w-0">
+                                <h4 class="text-white font-bold text-lg truncate relative z-10">${d.brand}</h4>
+                                <p class="text-gray-400 text-sm mt-1 line-clamp-2">${d.promo}</p>
+                                <div class="flex items-center justify-between mt-3">
+                                    ${discount ? `<span class="text-xs font-bold bg-radar-green text-black px-2 py-0.5">${discount}% OFF</span>` : '<span></span>'}
+                                    <span class="text-radar-green text-sm font-bold group-hover:underline">Shop <i class="fas fa-chevron-right text-xs ml-1"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
         // RENDER EMAIL OFFERS
         // =================================================================
         function renderEmail() {
@@ -966,6 +1054,7 @@
                 
                 if (currentTab === 'promos') renderPromos();
                 else if (currentTab === 'clearance') renderClearance();
+                else if (currentTab === 'impact') renderImpactDeals();
             });
         });
 
