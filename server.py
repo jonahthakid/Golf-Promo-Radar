@@ -10,12 +10,85 @@ import re
 import os
 import threading
 import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
 from flask import Flask, jsonify, send_from_directory, request, session, Response
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
+
+# =============================================================================
+# RSS FEED CONFIG
+# =============================================================================
+RSS_FEEDS = [
+    {"name": "GolfWRX", "url": "https://www.golfwrx.com/feed/", "icon": "wrx"},
+    {"name": "Skratch", "url": "https://www.skratch.golf/rss", "icon": "skratch"},
+]
+
+def fetch_rss_articles(max_per_feed=5):
+    """Fetch latest articles from RSS feeds"""
+    all_articles = []
+    
+    for feed in RSS_FEEDS:
+        try:
+            response = requests.get(feed["url"], headers=HEADERS, timeout=10)
+            if response.status_code != 200:
+                continue
+            
+            # Parse XML
+            root = ET.fromstring(response.content)
+            
+            # Handle both RSS 2.0 and Atom formats
+            items = root.findall('.//item') or root.findall('.//{http://www.w3.org/2005/Atom}entry')
+            
+            for item in items[:max_per_feed]:
+                try:
+                    # RSS 2.0 format
+                    title = item.find('title')
+                    link = item.find('link')
+                    pub_date = item.find('pubDate')
+                    description = item.find('description')
+                    
+                    # Try to get category
+                    category = item.find('category')
+                    
+                    # Try to get image from media:content or enclosure
+                    image_url = None
+                    media = item.find('.//{http://search.yahoo.com/mrss/}content')
+                    if media is not None:
+                        image_url = media.get('url')
+                    if not image_url:
+                        enclosure = item.find('enclosure')
+                        if enclosure is not None and 'image' in enclosure.get('type', ''):
+                            image_url = enclosure.get('url')
+                    
+                    if title is not None and link is not None:
+                        article = {
+                            "title": title.text.strip() if title.text else "",
+                            "url": link.text.strip() if link.text else "",
+                            "source": feed["name"],
+                            "icon": feed["icon"],
+                            "category": category.text if category is not None and category.text else "News",
+                            "image": image_url,
+                            "date": pub_date.text if pub_date is not None else None
+                        }
+                        
+                        # Clean up description for preview
+                        if description is not None and description.text:
+                            # Strip HTML tags
+                            clean_desc = re.sub(r'<[^>]+>', '', description.text)
+                            article["preview"] = clean_desc[:120].strip() + "..." if len(clean_desc) > 120 else clean_desc.strip()
+                        
+                        all_articles.append(article)
+                except:
+                    continue
+                    
+        except Exception as e:
+            print(f"⚠️  RSS fetch failed for {feed['name']}: {e}")
+            continue
+    
+    return all_articles
 
 # =============================================================================
 # IMPACT RADIUS CONFIG
@@ -2051,7 +2124,8 @@ def save_data(promos, clearance=None, impact_deals=None):
         ],
         "clearance": fresh_clearance,
         "impactDeals": fresh_impact,
-        "tacticalNuke": None  # Will be populated below
+        "tacticalNuke": None,  # Will be populated below
+        "articles": []  # Will be populated below
     }
     
     # Fetch tactical nuke product from Impact (rotates on each scan)
@@ -2063,6 +2137,15 @@ def save_data(promos, clearance=None, impact_deals=None):
                 print(f"🎯 Tactical Nuke: {nuke.get('name', 'Unknown')[:40]} ({nuke.get('discount', 0)}% off)")
         except Exception as e:
             print(f"⚠️  Tactical Nuke fetch failed: {e}")
+    
+    # Fetch RSS articles
+    try:
+        articles = fetch_rss_articles(max_per_feed=5)
+        if articles:
+            data["articles"] = articles
+            print(f"📰 Fetched {len(articles)} articles from RSS feeds")
+    except Exception as e:
+        print(f"⚠️  RSS fetch failed: {e}")
     
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -2083,6 +2166,8 @@ def load_data():
                     data["criticalHitIndex"] = 0
                 if "tacticalNuke" not in data:
                     data["tacticalNuke"] = None
+                if "articles" not in data:
+                    data["articles"] = []
                 return data
         except:
             pass
@@ -2095,7 +2180,8 @@ def load_data():
         "emailOffers": [],
         "clearance": [],
         "impactDeals": [],
-        "tacticalNuke": None
+        "tacticalNuke": None,
+        "articles": []
     }
 
 
