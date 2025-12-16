@@ -1,0 +1,42 @@
+[
+  {
+    "name": "SSC x Pluto Space Jacket",
+    "brand": "Sugarloaf Social Club",
+    "image_url": "https://www.sugarloafsocialclub.com/cdn/shop/files/SSCPLUTOJCKT-2-NVY_1copy.jpg?width=400",
+    "original_price": 170,
+    "sale_price": 70,
+    "affiliate_url": "https://www.sugarloafsocialclub.com/products/ssc-x-pluto-rain-jacket",
+    "review_url": null,
+    "badge": "COLLAB"
+  },
+  {
+    "name": "Championship Archive 3-Pack",
+    "brand": "B. Draddy",
+    "image_url": "https://bdraddy.com/cdn/shop/files/archivebd.jpg?width=400",
+    "original_price": 300,
+    "sale_price": 100,
+    "affiliate_url": "https://bdraddy.com/products/draddy-cotton-sport-championship-archive-packs",
+    "review_url": null,
+    "badge": "VALUE"
+  },
+  {
+    "name": "Qi35 Max Lite Driver",
+    "brand": "TaylorMade",
+    "image_url": "https://www.tgw.com/wcsstore/CatalogAssetStore/Attachment/images/products/golf/P199911/1-f.jpg",
+    "original_price": null,
+    "sale_price": 599.99,
+    "affiliate_url": "https://www.taylormadegolf.com/Qi35-Max-Lite-Driver/DW-TC377.html?lang=en_US",
+    "review_url": null,
+    "badge": "NEW"
+  },
+  {
+    "name": "Wainscott Short",
+    "brand": "Greyson",
+    "image_url": "https://greysonclothiers.com/cdn/shop/files/MFA22B68_262_1_499d851b-90ef-47c7-9f66-7b4e4933953a.png?width=400",
+    "original_price": 145,
+    "sale_price": 87,
+    "affiliate_url": "https://greysonclothiers.com/products/wainscott-short",
+    "review_url": null,
+    "badge": "40% OFF"
+  }
+]
