@@ -887,65 +887,31 @@ def extract_code(text):
     
     # Only extract codes that are explicitly called out as codes
     patterns = [
-        # Must have "code" or "coupon" or "promo" before it
         r'(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})\b',
-        r'(?:use|enter|apply)\s+(?:code\s+)?([A-Z0-9]{4,20})\b',
+        r'(?:use|enter|apply)\s+code\s+([A-Z0-9]{4,20})\b',
         r'with\s+code\s+([A-Z0-9]{4,20})\b',
         r'\bcode\s+([A-Z0-9]{4,20})\s+(?:for|at|to)\b',
     ]
     
     text_upper = text.upper()
     
-    # Extensive blacklist of false positives
-    blacklist = [
-        # Common words near discounts
-        'ALMOST', 'EVERYTHING', 'SITEWIDE', 'STOREWIDE', 'NOTHING', 'SOMETHING',
-        'ANYTHING', 'EVERYONE', 'SELECTED', 'SELECT', 'ENTIRE', 'WHOLE',
-        'UNLOCKS', 'UNLOCK', 'INCLUDES', 'INCLUDE', 'EXCLUDES', 'EXCLUDE',
-        'ORDERS', 'ORDER', 'ITEMS', 'ITEM', 'PRODUCTS', 'PRODUCT',
-        'STYLES', 'STYLE', 'BRANDS', 'BRAND', 'CATEGORIES', 'CATEGORY',
-        
-        # Time/urgency words
-        'TODAY', 'TOMORROW', 'WEEKEND', 'MONDAY', 'TUESDAY', 'WEDNESDAY',
-        'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY', 'LIMITED', 'HOURS',
-        'DAYS', 'WEEK', 'MONTH', 'YEAR', 'ENDING', 'STARTS', 'ENDS',
-        
-        # Generic web/code words
-        'HTTP', 'HTTPS', 'HTML', 'CSS', 'USD', 'DEFAULT', 'RANDOM',
-        'TRUE', 'FALSE', 'NULL', 'UNDEFINED', 'FUNCTION', 'RETURN',
-        'CONST', 'VAR', 'LET', 'CLASS', 'SCRIPT', 'TYPE', 'TEXT',
-        'AUTO', 'BLOCK', 'FLEX', 'GRID', 'FIXED', 'STATIC', 'NONE',
-        
-        # Common button/UI text
-        'SHOP', 'VIEW', 'CART', 'HERE', 'MORE', 'LESS', 'BACK',
-        'NEXT', 'PREV', 'SUBMIT', 'CLICK', 'LEARN', 'READ', 'DETAILS',
-        
-        # Shipping/offer words
-        'SHIPPING', 'DELIVERY', 'RETURNS', 'RETURN', 'EXCHANGE',
-        'OFF', 'NEW', 'SALE', 'FREE', 'BOGO', 'GIFT', 'GIFTS',
-        'PLUS', 'OVER', 'UNDER', 'FROM', 'UPTO', 'SAVE', 'TAKE', 'EXTRA',
-        'SIZE', 'SIZES', 'COLOR', 'COLORS', 'CHECKOUT', 'DISCOUNT',
-    ]
+    # Minimal blacklist - only things that are definitely not codes
+    blacklist = ['DEFAULT', 'TRUE', 'FALSE', 'NULL', 'UNDEFINED', 'FUNCTION', 
+                 'RETURN', 'CONST', 'VAR', 'HTTP', 'HTTPS', 'HTML', 'CSS']
     
     for pattern in patterns:
         matches = re.findall(pattern, text_upper, re.IGNORECASE)
         for match in matches:
             code = match.strip()
             
-            # Skip blacklisted words
             if code in blacklist:
                 continue
             
-            # Skip if too short or too long
             if len(code) < 4 or len(code) > 15:
                 continue
             
             # Skip hex color codes (6 chars, all hex valid like FAFAF9)
             if len(code) == 6 and re.match(r'^[A-F0-9]+$', code):
-                continue
-                
-            # Must have at least one letter
-            if not re.search(r'[A-Z]', code):
                 continue
             
             return code
