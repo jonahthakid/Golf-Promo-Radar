@@ -883,54 +883,72 @@ def extract_discount(text):
 
 
 def extract_code(text):
-    """Extract promo code from text"""
+    """Extract promo code from text - ONLY when explicitly marked as a code"""
+    
+    # Only extract codes that are explicitly called out as codes
     patterns = [
-        # Standard patterns
-        r'(?:code|promo|coupon|use|enter|apply)[:\s]+([A-Z0-9]{4,20})\b',
-        r'(?:code|promo|coupon)[:\s]*"?([A-Z0-9]{4,20})"?',
-        # "with code XXXX" pattern
+        # Must have "code" or "coupon" or "promo" before it
+        r'(?:code|coupon|promo)[:\s]+([A-Z0-9]{4,20})\b',
+        r'(?:use|enter|apply)\s+(?:code\s+)?([A-Z0-9]{4,20})\b',
         r'with\s+code\s+([A-Z0-9]{4,20})\b',
-        # "CODE: XXXX" or "CODE XXXX"
-        r'\bCODE[:\s]+([A-Z0-9]{4,20})\b',
-        # Standalone codes in all caps near discount words
-        r'(\d+%\s*off)[^A-Z]*([A-Z]{2}[A-Z0-9]{2,18})\b',
-        # "XXXX at checkout"
-        r'([A-Z0-9]{4,20})\s+at\s+checkout',
-        # "save with XXXX"
-        r'save\s+(?:with\s+)?([A-Z0-9]{4,20})\b',
-        # "use XXXX for"
-        r'use\s+([A-Z0-9]{4,20})\s+(?:for|to)\b',
-        # Codes that look like SAVE15, GOLF20, HOLIDAY25, etc.
-        r'\b((?:SAVE|GOLF|EXTRA|TAKE|GET|HOLIDAY|SUMMER|WINTER|SPRING|FALL|BLACK|CYBER|VIP|WELCOME|FIRST|NEW)[0-9]{1,3})\b',
-        r'\b([A-Z]{2,8}[0-9]{2,3})\b',  # Generic pattern like SHIP20, FREE15
+        r'\bcode\s+([A-Z0-9]{4,20})\s+(?:for|at|to)\b',
     ]
     
     text_upper = text.upper()
     
-    # Filter out common false positives
-    blacklist = ['HTTP', 'HTTPS', 'HTML', 'CSS', 'USD', 'OFF', 'NEW', 
-                'SALE', 'SHOP', 'FREE', 'BOGO', 'SIZE', 'VIEW', 'ITEM',
-                'ITEMS', 'CART', 'HERE', 'WITH', 'YOUR', 'THIS', 'THAT',
-                'MORE', 'LESS', 'ONLY', 'JUST', 'BEST', 'GIFT', 'NONE',
-                'SHIP', 'NEXT', 'LAST', 'YEAR', 'TODAY', 'WEEK', 'DAYS',
-                'HOURS', 'MINS', 'LEFT', 'ENDS', 'SAVE', 'TAKE', 'EXTRA',
-                'PLUS', 'OVER', 'UNDER', 'FROM', 'UPTO', 'MOST', 'MANY']
+    # Extensive blacklist of false positives
+    blacklist = [
+        # Common words near discounts
+        'ALMOST', 'EVERYTHING', 'SITEWIDE', 'STOREWIDE', 'NOTHING', 'SOMETHING',
+        'ANYTHING', 'EVERYONE', 'SELECTED', 'SELECT', 'ENTIRE', 'WHOLE',
+        'UNLOCKS', 'UNLOCK', 'INCLUDES', 'INCLUDE', 'EXCLUDES', 'EXCLUDE',
+        'ORDERS', 'ORDER', 'ITEMS', 'ITEM', 'PRODUCTS', 'PRODUCT',
+        'STYLES', 'STYLE', 'BRANDS', 'BRAND', 'CATEGORIES', 'CATEGORY',
+        
+        # Time/urgency words
+        'TODAY', 'TOMORROW', 'WEEKEND', 'MONDAY', 'TUESDAY', 'WEDNESDAY',
+        'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY', 'LIMITED', 'HOURS',
+        'DAYS', 'WEEK', 'MONTH', 'YEAR', 'ENDING', 'STARTS', 'ENDS',
+        
+        # Generic web/code words
+        'HTTP', 'HTTPS', 'HTML', 'CSS', 'USD', 'DEFAULT', 'RANDOM',
+        'TRUE', 'FALSE', 'NULL', 'UNDEFINED', 'FUNCTION', 'RETURN',
+        'CONST', 'VAR', 'LET', 'CLASS', 'SCRIPT', 'TYPE', 'TEXT',
+        'AUTO', 'BLOCK', 'FLEX', 'GRID', 'FIXED', 'STATIC', 'NONE',
+        
+        # Common button/UI text
+        'SHOP', 'VIEW', 'CART', 'HERE', 'MORE', 'LESS', 'BACK',
+        'NEXT', 'PREV', 'SUBMIT', 'CLICK', 'LEARN', 'READ', 'DETAILS',
+        
+        # Shipping/offer words
+        'SHIPPING', 'DELIVERY', 'RETURNS', 'RETURN', 'EXCHANGE',
+        'OFF', 'NEW', 'SALE', 'FREE', 'BOGO', 'GIFT', 'GIFTS',
+        'PLUS', 'OVER', 'UNDER', 'FROM', 'UPTO', 'SAVE', 'TAKE', 'EXTRA',
+        'SIZE', 'SIZES', 'COLOR', 'COLORS', 'CHECKOUT', 'DISCOUNT',
+    ]
     
     for pattern in patterns:
         matches = re.findall(pattern, text_upper, re.IGNORECASE)
         for match in matches:
-            # Handle tuple matches (from patterns with multiple groups)
-            code = match[-1] if isinstance(match, tuple) else match
-            code = code.strip()
+            code = match.strip()
             
-            if code not in blacklist and len(code) >= 4 and len(code) <= 20:
-                # Must have at least one letter and ideally a number for real codes
-                has_letter = bool(re.search(r'[A-Z]', code))
-                has_number = bool(re.search(r'[0-9]', code))
+            # Skip blacklisted words
+            if code in blacklist:
+                continue
+            
+            # Skip if too short or too long
+            if len(code) < 4 or len(code) > 15:
+                continue
+            
+            # Skip hex color codes (6 chars, all hex valid like FAFAF9)
+            if len(code) == 6 and re.match(r'^[A-F0-9]+$', code):
+                continue
                 
-                # Accept if it has both letter and number, or if it's a known code pattern
-                if has_letter and (has_number or len(code) >= 6):
-                    return code
+            # Must have at least one letter
+            if not re.search(r'[A-Z]', code):
+                continue
+            
+            return code
     
     return None
 
@@ -1457,44 +1475,6 @@ def scrape_brand(brand):
             try:
                 for el in soup.select(selector):
                     el.decompose()
-            except:
-                pass
-        
-        # =================================================================
-        # AGGRESSIVE CODE SEARCH IN PAGE HEADER/BANNER AREA
-        # =================================================================
-        if not result.get("code"):
-            try:
-                # Get text from header area
-                header_selectors = [
-                    'header',
-                    '[class*="header"]',
-                    '[class*="announcement"]',
-                    '[class*="banner"]',
-                    '[class*="promo"]',
-                    '[role="banner"]',
-                ]
-                header_text = ""
-                for sel in header_selectors:
-                    for el in soup.select(sel)[:2]:
-                        header_text += " " + el.get_text(separator=' ', strip=True)
-                
-                # Look for code-like patterns near discount keywords
-                if header_text:
-                    # Pattern: find discount mention followed by code
-                    # e.g., "20% off with SAVE20" or "Use code HOLIDAY25"
-                    code_near_discount = re.search(
-                        r'(\d+%|free shipping|discount|save|off).*?\b([A-Z]{2,}[0-9]{1,3}|[A-Z0-9]{5,15})\b',
-                        header_text.upper()
-                    )
-                    if code_near_discount:
-                        potential_code = code_near_discount.group(2)
-                        blacklist = ['SHIPPING', 'ORDERS', 'TODAY', 'ITEMS', 'SITEWIDE', 
-                                    'EVERYTHING', 'STOREWIDE', 'ALMOST', 'SELECT']
-                        if potential_code not in blacklist and len(potential_code) >= 4:
-                            # Validate - should have letters and ideally numbers
-                            if re.search(r'[A-Z]', potential_code):
-                                result["code"] = potential_code
             except:
                 pass
         
