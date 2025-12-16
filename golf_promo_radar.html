@@ -433,12 +433,16 @@
                     </div>
                     <h3 class="font-loud text-2xl text-white tracking-wider">TACTICAL NUKES</h3>
                     <div class="flex-1 h-px bg-radar-grid"></div>
-                    <span class="text-gray-600 text-xs font-mono">PARTNER PICKS</span>
+                    <span class="text-gray-600 text-xs font-mono">EDITOR'S PICKS</span>
                 </div>
                 
                 <div id="tactical-nukes-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <!-- Products populated by JS -->
                 </div>
+                
+                <button id="tactical-nukes-toggle" onclick="toggleTacticalNukes()" class="hidden w-full mt-3 py-2 border border-radar-grid text-gray-500 hover:text-radar-green hover:border-radar-green transition-colors font-mono text-sm">
+                    <i class="fas fa-chevron-down mr-2"></i>VIEW ALL
+                </button>
             </div>
 
             <!-- Deals Grid -->
@@ -1183,39 +1187,68 @@
         }
 
         // =================================================================
-        // RENDER TACTICAL NUKES (Dynamic from Impact)
+        // RENDER TACTICAL NUKES (Editor-curated)
         // =================================================================
+        let tacticalNukesExpanded = false;
+        
         function renderTacticalNukes() {
             const section = document.getElementById('tactical-nukes-section');
             const grid = document.getElementById('tactical-nukes-grid');
+            const toggleBtn = document.getElementById('tactical-nukes-toggle');
             
-            const nukes = promoData.tacticalNukes || [];
+            const allNukes = promoData.tacticalNukes || [];
             
-            if (nukes.length === 0) {
+            if (allNukes.length === 0) {
                 section.classList.add('hidden');
                 return;
             }
             
             section.classList.remove('hidden');
             
+            // Show 4 initially, or all if expanded
+            const nukes = tacticalNukesExpanded ? allNukes : allNukes.slice(0, 4);
+            
+            // Show/hide toggle button
+            if (allNukes.length > 4) {
+                toggleBtn.classList.remove('hidden');
+                toggleBtn.innerHTML = tacticalNukesExpanded 
+                    ? '<i class="fas fa-chevron-up mr-2"></i>SHOW LESS'
+                    : `<i class="fas fa-chevron-down mr-2"></i>VIEW ALL (${allNukes.length})`;
+            } else {
+                toggleBtn.classList.add('hidden');
+            }
+            
             grid.innerHTML = nukes.map(p => {
-                const hasDiscount = p.original_price > 0 && p.sale_price > 0 && p.sale_price < p.original_price;
-                const discountBadge = hasDiscount 
-                    ? `<div class="absolute top-2 left-2 bg-radar-green text-black text-[10px] font-bold px-1.5 py-0.5">${p.discount}% OFF</div>`
-                    : '';
+                const hasDiscount = p.original_price && p.sale_price && p.sale_price < p.original_price;
+                
+                // Badge colors
+                const badgeColors = {
+                    'COLLAB': 'bg-radar-orange text-black',
+                    'VALUE': 'bg-radar-green text-black',
+                    'NEW': 'bg-blue-600 text-white',
+                    "EDITOR'S PICK": 'bg-purple-600 text-white',
+                    'HOT': 'bg-radar-red text-black'
+                };
+                const badgeClass = badgeColors[p.badge] || 'bg-radar-green text-black';
+                const badgeHtml = p.badge ? `<div class="absolute top-2 left-2 ${badgeClass} text-[10px] font-bold px-1.5 py-0.5">${p.badge}</div>` : '';
                 
                 const priceDisplay = hasDiscount
                     ? `<div>
-                            <span class="text-gray-500 line-through text-xs mr-1">$${p.original_price.toFixed(0)}</span>
-                            <span class="text-radar-green font-bold">$${p.sale_price.toFixed(0)}</span>
+                            <span class="text-gray-500 line-through text-xs mr-1">$${p.original_price}</span>
+                            <span class="text-radar-green font-bold">$${p.sale_price}</span>
                        </div>`
-                    : `<span class="text-radar-green font-bold">$${(p.sale_price || p.original_price || 0).toFixed(0)}</span>`;
+                    : `<span class="text-radar-green font-bold">$${p.sale_price || p.original_price || ''}</span>`;
+                
+                const reviewLink = p.review_url 
+                    ? `<a href="${p.review_url}" target="_blank" rel="noopener" class="absolute top-2 right-2 bg-black/70 text-radar-green text-[10px] font-bold px-1.5 py-0.5 hover:bg-radar-green hover:text-black transition-colors" onclick="event.stopPropagation()">READ REVIEW</a>`
+                    : '';
                 
                 return `
                 <a href="${p.affiliate_url}" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
                     <div class="aspect-square bg-gray-900 relative overflow-hidden">
                         <img src="${p.image_url}" alt="${p.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23111%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23333%22 font-size=%2240%22>?</text></svg>'">
-                        ${discountBadge}
+                        ${badgeHtml}
+                        ${reviewLink}
                     </div>
                     <div class="p-3">
                         <div class="text-[10px] text-radar-green uppercase tracking-wider mb-1">${p.brand || 'Partner'}</div>
@@ -1227,6 +1260,11 @@
                     </div>
                 </a>
             `}).join('');
+        }
+        
+        function toggleTacticalNukes() {
+            tacticalNukesExpanded = !tacticalNukesExpanded;
+            renderTacticalNukes();
         }
 
         // =================================================================
