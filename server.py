@@ -507,6 +507,138 @@ class ImpactAPI:
             self._ads = all_ads
         return self._ads
     
+    def get_catalog_items(self, campaign_id=None, max_items=50):
+        """Get products from Impact product catalog"""
+        try:
+            params = {"PageSize": max_items}
+            if campaign_id:
+                params["CampaignId"] = campaign_id
+            
+            data = self._get("Catalogs/Items", params)
+            if data and "Items" in data:
+                return data["Items"]
+            
+            # Try alternate endpoint
+            data = self._get("CatalogItems", params)
+            if data and "CatalogItems" in data:
+                return data["CatalogItems"]
+                
+        except Exception as e:
+            print(f"Catalog fetch error: {e}")
+        return []
+    
+    def get_featured_product(self, rotation_index=0):
+        """Get a featured product for Tactical Nuke section, with rotation"""
+        
+        # Golf-related keywords to filter products
+        golf_keywords = [
+            'golf', 'driver', 'iron', 'putter', 'wedge', 'hybrid', 'fairway',
+            'wood', 'shaft', 'grip', 'glove', 'tee', 'ball', 'bag', 'cart',
+            'rangefinder', 'gps', 'launch monitor', 'simulator', 'polo',
+            'quarter zip', 'pullover', 'vest', 'shorts', 'pants', 'hat', 'cap',
+            'visor', 'headcover', 'towel', 'divot', 'marker', 'scorecard',
+            'callaway', 'titleist', 'taylormade', 'ping', 'cobra', 'mizuno',
+            'cleveland', 'srixon', 'bridgestone', 'pxg', 'scotty cameron',
+            'footjoy', 'ecco', 'adidas golf', 'nike golf', 'puma golf',
+            'travis mathew', 'peter millar', 'johnnie-o', 'greyson', 'kjus',
+            'g/fore', 'malbon', 'eastside golf', 'bad birdie', 'swannies',
+            'birds of condor', 'linksoul', 'matte grey', 'rhoback', 'holderness',
+            'bushnell', 'garmin', 'arccos', 'shot scope', 'rapsodo', 'flightscope',
+            'trackman', 'skytrak', 'foresight', 'full swing', 'aboutgolf',
+            'push cart', 'stand bag', 'cart bag', 'tour bag', 'carry bag',
+            'clicgear', 'sun mountain', 'bag boy', 'ogio', 'vessel', 'jones',
+            'sunday bag', 'pencil bag', 'staff bag'
+        ]
+        
+        def is_golf_related(item):
+            """Check if product is golf-related"""
+            searchable = ' '.join([
+                str(item.get("Name", "")),
+                str(item.get("ProductName", "")),
+                str(item.get("Description", "")),
+                str(item.get("Category", "")),
+                str(item.get("Manufacturer", "")),
+                str(item.get("Brand", "")),
+                str(item.get("CampaignName", ""))
+            ]).lower()
+            
+            return any(kw in searchable for kw in golf_keywords)
+        
+        # Try to get products with good discounts
+        items = self.get_catalog_items(max_items=100)
+        
+        featured_products = []
+        for item in items:
+            try:
+                # Skip non-golf products
+                if not is_golf_related(item):
+                    continue
+                
+                # Extract pricing
+                original_price = float(item.get("OriginalPrice", 0) or item.get("RetailPrice", 0) or 0)
+                sale_price = float(item.get("CurrentPrice", 0) or item.get("SalePrice", 0) or item.get("Price", 0) or 0)
+                
+                if original_price > 0 and sale_price > 0 and sale_price < original_price:
+                    discount = int(((original_price - sale_price) / original_price) * 100)
+                    
+                    if discount >= 20:  # At least 20% off
+                        featured_products.append({
+                            "name": item.get("Name", item.get("ProductName", "Unknown Product")),
+                            "brand": item.get("Manufacturer", item.get("Brand", item.get("CampaignName", ""))),
+                            "image_url": item.get("ImageUrl", item.get("ProductImageUrl", "")),
+                            "original_price": original_price,
+                            "sale_price": sale_price,
+                            "discount": discount,
+                            "affiliate_url": item.get("TrackingLink", item.get("Url", "")),
+                            "description": item.get("Description", "")[:100] if item.get("Description") else "",
+                            "category": item.get("Category", "")
+                        })
+            except:
+                continue
+        
+        # Sort by discount and rotate through top products
+        if featured_products:
+            featured_products.sort(key=lambda x: x["discount"], reverse=True)
+            # Take top 10 and rotate through them
+            top_products = featured_products[:10]
+            return top_products[rotation_index % len(top_products)]
+        
+        # Fallback: use ads/deals and rotate through best ones (also filtered)
+        ads = self.get_ads()
+        good_deals = []
+        
+        for ad in ads:
+            desc = ad.get("Description", "")
+            campaign = ad.get("CampaignName", "")
+            
+            # Check if golf-related
+            searchable = f"{desc} {campaign}".lower()
+            if not any(kw in searchable for kw in golf_keywords):
+                continue
+            
+            match = re.search(r'(\d+)%', desc)
+            if match:
+                discount = int(match.group(1))
+                if 20 <= discount <= 80:
+                    good_deals.append({
+                        "name": desc[:60],
+                        "brand": campaign,
+                        "image_url": ad.get("ImageUrl", ""),
+                        "original_price": 0,
+                        "sale_price": 0,
+                        "discount": discount,
+                        "affiliate_url": ad.get("TrackingLink", ""),
+                        "description": desc,
+                        "category": "deal"
+                    })
+        
+        if good_deals:
+            good_deals.sort(key=lambda x: x["discount"], reverse=True)
+            top_deals = good_deals[:10]
+            return top_deals[rotation_index % len(top_deals)]
+        
+        return None
+    
     def get_actions(self, start_date=None, end_date=None):
         """Get conversion actions (sales/leads)"""
         if not start_date:
@@ -1918,8 +2050,19 @@ def save_data(promos, clearance=None, impact_deals=None):
             for p in promos if p.get("email_offer")
         ],
         "clearance": fresh_clearance,
-        "impactDeals": fresh_impact
+        "impactDeals": fresh_impact,
+        "tacticalNuke": None  # Will be populated below
     }
+    
+    # Fetch tactical nuke product from Impact (rotates on each scan)
+    if impact_api:
+        try:
+            nuke = impact_api.get_featured_product(rotation_index=critical_hit_index)
+            if nuke:
+                data["tacticalNuke"] = nuke
+                print(f"🎯 Tactical Nuke: {nuke.get('name', 'Unknown')[:40]} ({nuke.get('discount', 0)}% off)")
+        except Exception as e:
+            print(f"⚠️  Tactical Nuke fetch failed: {e}")
     
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -1938,6 +2081,8 @@ def load_data():
                     data["impactDeals"] = []
                 if "criticalHitIndex" not in data:
                     data["criticalHitIndex"] = 0
+                if "tacticalNuke" not in data:
+                    data["tacticalNuke"] = None
                 return data
         except:
             pass
@@ -1949,7 +2094,8 @@ def load_data():
         "codes": [],
         "emailOffers": [],
         "clearance": [],
-        "impactDeals": []
+        "impactDeals": [],
+        "tacticalNuke": None
     }
 
 
