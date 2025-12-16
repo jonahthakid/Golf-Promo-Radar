@@ -785,51 +785,92 @@
                 return getDiscount(b) - getDiscount(a);
             });
 
-            // Featured (rotates through high-discount promos on each scan)
-            if (promos.length > 0 && !searchQuery) {
-                // Get all promos with 40%+ discount
-                const criticalHits = promos.filter(p => {
-                    const discount = p.promo?.match(/(\d+)%/)?.[1];
-                    return discount && parseInt(discount) >= 40;
-                });
+            // Featured - Tactical Nuke from Impact or Critical Hit fallback
+            if (!searchQuery) {
+                const nuke = promoData.tacticalNuke;
                 
-                if (criticalHits.length > 0) {
-                    // Use criticalHitIndex from backend to rotate
-                    const rotationIndex = (promoData.criticalHitIndex || 0) % criticalHits.length;
-                    const top = criticalHits[rotationIndex];
-                    const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
-                    
-                    const linkUrl = top.affiliate_url || top.url;
-                    const hasLogo = top.image && !top.image.includes('data:');
+                if (nuke && nuke.affiliate_url) {
+                    // Show Tactical Nuke product from Impact
                     featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
+                    
+                    const priceDisplay = nuke.original_price && nuke.sale_price 
+                        ? `<span class="text-gray-500 line-through mr-2">$${nuke.original_price.toFixed(0)}</span><span class="text-radar-green font-bold text-xl">$${nuke.sale_price.toFixed(0)}</span>`
+                        : '';
+                    
                     featured.innerHTML = `
                         <div class="target-corner tl border-radar-red"></div>
                         <div class="target-corner tr border-radar-red"></div>
                         <div class="target-corner bl border-radar-red"></div>
                         <div class="target-corner br border-radar-red"></div>
-                        <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
+                        <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">💣 TACTICAL NUKE</div>
                         <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-                            <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
-                                ${hasLogo 
-                                    ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
-                                    : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
+                            <div class="w-24 h-24 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
+                                ${nuke.image_url 
+                                    ? `<img src="${nuke.image_url}" alt="${nuke.name}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-bomb text-3xl text-radar-red\\'></i>'">`
+                                    : `<i class="fas fa-bomb text-3xl text-radar-red"></i>`
                                 }
                             </div>
                             <div class="flex-grow">
-                                <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
-                                <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
-                                <div class="flex flex-wrap gap-2 mt-2">
-                                    <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${discount}% OFF</span>
-                                    ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
+                                <div class="text-xs text-radar-red uppercase tracking-wider mb-1">${nuke.brand || 'Partner Deal'}</div>
+                                <h3 class="font-loud text-2xl text-white group-hover:text-radar-red transition-colors leading-tight">${nuke.name || 'Featured Deal'}</h3>
+                                <div class="flex flex-wrap items-center gap-3 mt-2">
+                                    ${priceDisplay}
+                                    <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${nuke.discount}% OFF</span>
                                 </div>
+                                ${nuke.description ? `<p class="text-gray-500 text-xs mt-2">${nuke.description}</p>` : ''}
                             </div>
-                            <a href="${linkUrl}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
-                                ACCESS
+                            <a href="${nuke.affiliate_url}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors whitespace-nowrap">
+                                GET DEAL
                             </a>
                         </div>
                     `;
-                    // Remove the featured item from the grid
-                    promos = promos.filter(p => p.brand !== top.brand || p.promo !== top.promo);
+                } else if (promos.length > 0) {
+                    // Fallback to Critical Hit rotation
+                    const criticalHits = promos.filter(p => {
+                        const discount = p.promo?.match(/(\d+)%/)?.[1];
+                        return discount && parseInt(discount) >= 40;
+                    });
+                    
+                    if (criticalHits.length > 0) {
+                        const rotationIndex = (promoData.criticalHitIndex || 0) % criticalHits.length;
+                        const top = criticalHits[rotationIndex];
+                        const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
+                        
+                        const linkUrl = top.affiliate_url || top.url;
+                        const hasLogo = top.image && !top.image.includes('data:');
+                        featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
+                        featured.innerHTML = `
+                            <div class="target-corner tl border-radar-red"></div>
+                            <div class="target-corner tr border-radar-red"></div>
+                            <div class="target-corner bl border-radar-red"></div>
+                            <div class="target-corner br border-radar-red"></div>
+                            <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
+                            <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
+                                <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
+                                    ${hasLogo 
+                                        ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
+                                        : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
+                                    }
+                                </div>
+                                <div class="flex-grow">
+                                    <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
+                                    <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
+                                    <div class="flex flex-wrap gap-2 mt-2">
+                                        <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${discount}% OFF</span>
+                                        ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
+                                    </div>
+                                </div>
+                                <a href="${linkUrl}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
+                                    ACCESS
+                                </a>
+                            </div>
+                        `;
+                        // Remove the featured item from the grid
+                        promos = promos.filter(p => p.brand !== top.brand || p.promo !== top.promo);
+                    } else {
+                        featured.className = 'hidden';
+                        featured.innerHTML = '';
+                    }
                 } else {
                     featured.className = 'hidden';
                     featured.innerHTML = '';
