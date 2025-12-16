@@ -2098,15 +2098,15 @@ def save_data(promos, clearance=None, impact_deals=None):
         "articles": []  # Will be populated below
     }
     
-    # Fetch tactical nukes products from Impact catalog
-    if impact_api:
-        try:
-            nukes = impact_api.get_featured_products(count=4)
-            if nukes:
-                data["tacticalNukes"] = nukes
-                print(f"🎯 Tactical Nukes: {len(nukes)} products loaded")
-        except Exception as e:
-            print(f"⚠️  Tactical Nukes fetch failed: {e}")
+    # Load tactical nukes from JSON config file (editor-curated)
+    try:
+        nukes_file = os.path.join(os.path.dirname(__file__), 'tactical_nukes.json')
+        if os.path.exists(nukes_file):
+            with open(nukes_file) as f:
+                data["tacticalNukes"] = json.load(f)
+                print(f"🎯 Tactical Nukes: {len(data['tacticalNukes'])} products loaded from config")
+    except Exception as e:
+        print(f"⚠️  Tactical Nukes config load failed: {e}")
     
     # Fetch RSS articles
     try:
@@ -2486,6 +2486,47 @@ def radar_stats():
         "last_updated": data.get("lastUpdated"),
         "total_brands_monitored": len(BRANDS)
     })
+
+
+@app.route('/api/debug/catalog')
+def debug_catalog():
+    """Debug endpoint to see Impact catalog data"""
+    if not impact_api:
+        return jsonify({"error": "Impact API not initialized"})
+    
+    results = {
+        "campaigns": [],
+        "catalog_items_raw": None,
+        "catalog_search_raw": None,
+        "ads_sample": [],
+        "featured_products": []
+    }
+    
+    try:
+        # Get campaigns
+        campaigns = impact_api.get_campaigns()
+        results["campaigns"] = [{"id": c.get("CampaignId"), "name": c.get("CampaignName")} for c in campaigns[:10]]
+        
+        # Try direct catalog endpoint
+        catalog_data = impact_api._get("Catalogs/Items", {"PageSize": 5})
+        results["catalog_items_raw"] = catalog_data
+        
+        # Try catalog search
+        search_data = impact_api._get("Catalogs/ItemSearch", {"PageSize": 5, "Query": "golf"})
+        results["catalog_search_raw"] = search_data
+        
+        # Get sample ads
+        ads = impact_api.get_ads()
+        results["ads_sample"] = ads[:3] if ads else []
+        
+        # Try featured products
+        featured = impact_api.get_featured_products(count=4)
+        results["featured_products"] = featured
+        
+    except Exception as e:
+        results["error"] = str(e)
+    
+    return jsonify(results)
 
 
 # =============================================================================
