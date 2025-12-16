@@ -600,8 +600,9 @@ class ImpactAPI:
             print(f"Catalog fetch error: {e}")
         return []
     
-    def get_featured_product(self, rotation_index=0):
-        """Get a featured product for Tactical Nuke section, with rotation"""
+    def get_featured_products(self, count=4):
+        """Get featured products for Tactical Nukes section.
+        Only returns real catalog products with images."""
         
         # Golf-related keywords to filter products
         golf_keywords = [
@@ -647,6 +648,11 @@ class ImpactAPI:
                 if not is_golf_related(item):
                     continue
                 
+                # Must have an image URL
+                image_url = item.get("ImageUrl", item.get("ProductImageUrl", ""))
+                if not image_url:
+                    continue
+                
                 # Extract pricing
                 original_price = float(item.get("OriginalPrice", 0) or item.get("RetailPrice", 0) or 0)
                 sale_price = float(item.get("CurrentPrice", 0) or item.get("SalePrice", 0) or item.get("Price", 0) or 0)
@@ -654,11 +660,11 @@ class ImpactAPI:
                 if original_price > 0 and sale_price > 0 and sale_price < original_price:
                     discount = int(((original_price - sale_price) / original_price) * 100)
                     
-                    if discount >= 20:  # At least 20% off
+                    if discount >= 15:  # At least 15% off
                         featured_products.append({
                             "name": item.get("Name", item.get("ProductName", "Unknown Product")),
                             "brand": item.get("Manufacturer", item.get("Brand", item.get("CampaignName", ""))),
-                            "image_url": item.get("ImageUrl", item.get("ProductImageUrl", "")),
+                            "image_url": image_url,
                             "original_price": original_price,
                             "sale_price": sale_price,
                             "discount": discount,
@@ -669,48 +675,12 @@ class ImpactAPI:
             except:
                 continue
         
-        # Sort by discount and rotate through top products
+        # Sort by discount and return top products
         if featured_products:
             featured_products.sort(key=lambda x: x["discount"], reverse=True)
-            # Take top 10 and rotate through them
-            top_products = featured_products[:10]
-            return top_products[rotation_index % len(top_products)]
+            return featured_products[:count]
         
-        # Fallback: use ads/deals and rotate through best ones (also filtered)
-        ads = self.get_ads()
-        good_deals = []
-        
-        for ad in ads:
-            desc = ad.get("Description", "")
-            campaign = ad.get("CampaignName", "")
-            
-            # Check if golf-related
-            searchable = f"{desc} {campaign}".lower()
-            if not any(kw in searchable for kw in golf_keywords):
-                continue
-            
-            match = re.search(r'(\d+)%', desc)
-            if match:
-                discount = int(match.group(1))
-                if 20 <= discount <= 80:
-                    good_deals.append({
-                        "name": desc[:60],
-                        "brand": campaign,
-                        "image_url": ad.get("ImageUrl", ""),
-                        "original_price": 0,
-                        "sale_price": 0,
-                        "discount": discount,
-                        "affiliate_url": ad.get("TrackingLink", ""),
-                        "description": desc,
-                        "category": "deal"
-                    })
-        
-        if good_deals:
-            good_deals.sort(key=lambda x: x["discount"], reverse=True)
-            top_deals = good_deals[:10]
-            return top_deals[rotation_index % len(top_deals)]
-        
-        return None
+        return []
     
     def get_actions(self, start_date=None, end_date=None):
         """Get conversion actions (sales/leads)"""
@@ -2124,19 +2094,19 @@ def save_data(promos, clearance=None, impact_deals=None):
         ],
         "clearance": fresh_clearance,
         "impactDeals": fresh_impact,
-        "tacticalNuke": None,  # Will be populated below
+        "tacticalNukes": [],  # Will be populated below
         "articles": []  # Will be populated below
     }
     
-    # Fetch tactical nuke product from Impact (rotates on each scan)
+    # Fetch tactical nukes products from Impact catalog
     if impact_api:
         try:
-            nuke = impact_api.get_featured_product(rotation_index=critical_hit_index)
-            if nuke:
-                data["tacticalNuke"] = nuke
-                print(f"🎯 Tactical Nuke: {nuke.get('name', 'Unknown')[:40]} ({nuke.get('discount', 0)}% off)")
+            nukes = impact_api.get_featured_products(count=4)
+            if nukes:
+                data["tacticalNukes"] = nukes
+                print(f"🎯 Tactical Nukes: {len(nukes)} products loaded")
         except Exception as e:
-            print(f"⚠️  Tactical Nuke fetch failed: {e}")
+            print(f"⚠️  Tactical Nukes fetch failed: {e}")
     
     # Fetch RSS articles
     try:
@@ -2164,8 +2134,8 @@ def load_data():
                     data["impactDeals"] = []
                 if "criticalHitIndex" not in data:
                     data["criticalHitIndex"] = 0
-                if "tacticalNuke" not in data:
-                    data["tacticalNuke"] = None
+                if "tacticalNukes" not in data:
+                    data["tacticalNukes"] = []
                 if "articles" not in data:
                     data["articles"] = []
                 return data
@@ -2180,7 +2150,7 @@ def load_data():
         "emailOffers": [],
         "clearance": [],
         "impactDeals": [],
-        "tacticalNuke": None,
+        "tacticalNukes": [],
         "articles": []
     }
 
