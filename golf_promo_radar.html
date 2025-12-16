@@ -129,9 +129,28 @@
         }
 
         /* Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #1a1a1a; border: 1px solid #00ff41; }
+        
+        /* Line clamp for article titles */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        /* Vertical text for sidebar toggle */
+        .writing-vertical {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+        
+        /* Sidebar open state */
+        #intel-sidebar.open {
+            transform: translateX(0);
+        }
 
         /* New code highlight - pulsing red/orange border */
         .new-code-highlight {
@@ -509,6 +528,39 @@
         </section>
     </main>
 
+    <!-- Intel Feed Sidebar - Collapsible -->
+    <div id="intel-sidebar" class="fixed top-0 right-0 h-full w-80 bg-radar-black border-l border-radar-grid transform translate-x-full transition-transform duration-300 z-50 flex flex-col">
+        <!-- Header -->
+        <div class="p-4 border-b border-radar-grid flex items-center justify-between">
+            <h3 class="font-loud text-lg text-white tracking-wider">
+                <i class="fas fa-satellite-dish text-radar-green mr-2"></i>INTEL FEED
+            </h3>
+            <button onclick="toggleIntelFeed()" class="text-gray-500 hover:text-white transition-colors">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        
+        <!-- Articles -->
+        <div id="articles-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <!-- Articles populated by JS -->
+        </div>
+        
+        <!-- Footer -->
+        <div class="p-3 border-t border-radar-grid text-center">
+            <span class="text-gray-600 text-xs font-mono">FROM THE NETWORK</span>
+        </div>
+    </div>
+    
+    <!-- Intel Feed Toggle Button -->
+    <button id="intel-toggle" onclick="toggleIntelFeed()" 
+            class="fixed right-0 top-1/2 -translate-y-1/2 bg-radar-dark border border-radar-grid border-r-0 rounded-l-lg px-2 py-4 z-40 hover:bg-radar-green hover:text-black transition-all group hidden">
+        <div class="flex flex-col items-center gap-2">
+            <i class="fas fa-newspaper text-radar-green group-hover:text-black"></i>
+            <span class="font-loud text-xs tracking-widest writing-vertical text-white group-hover:text-black">INTEL</span>
+            <span id="intel-count" class="bg-radar-green text-black text-xs font-bold px-1.5 py-0.5 rounded">0</span>
+        </div>
+    </button>
+
     <!-- Intel Marquee - Fixed at bottom -->
     <div class="fixed bottom-0 left-0 right-0 bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black z-[60]">
         <div class="marquee-track flex" id="marquee-track">
@@ -537,7 +589,7 @@
         // =================================================================
         // STATE
         // =================================================================
-        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [] };
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNuke: null, articles: [] };
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -744,6 +796,9 @@
             else if (currentTab === 'clearance') renderClearance();
             else if (currentTab === 'impact') renderImpactDeals();
             else if (currentTab === 'email') renderEmail();
+            
+            // Always render articles
+            renderArticles();
         }
 
         // =================================================================
@@ -1235,6 +1290,55 @@
                     </div>
                 </a>
             `}).join('');
+        }
+
+        // =================================================================
+        // RENDER ARTICLES (Sidebar)
+        // =================================================================
+        function renderArticles() {
+            const toggle = document.getElementById('intel-toggle');
+            const list = document.getElementById('articles-list');
+            const count = document.getElementById('intel-count');
+            
+            const articles = promoData.articles || [];
+            
+            if (articles.length === 0) {
+                toggle.classList.add('hidden');
+                return;
+            }
+            
+            toggle.classList.remove('hidden');
+            count.textContent = articles.length;
+            
+            list.innerHTML = articles.map(a => {
+                const sourceColor = a.source === 'GolfWRX' ? 'text-blue-400' : 'text-radar-green';
+                const sourceBg = a.source === 'GolfWRX' ? 'bg-blue-400/10 border-blue-400/30' : 'bg-radar-green/10 border-radar-green/30';
+                
+                return `
+                <a href="${a.url}" target="_blank" rel="noopener" 
+                   class="block bg-radar-dark border border-radar-grid rounded-lg overflow-hidden hover:border-radar-green transition-colors group">
+                    ${a.image ? `
+                        <div class="h-28 bg-gray-900 overflow-hidden">
+                            <img src="${a.image}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.parentElement.innerHTML='<div class=\\'flex items-center justify-center h-full text-gray-700\\'><i class=\\'fas fa-newspaper text-2xl\\'></i></div>'">
+                        </div>
+                    ` : ''}
+                    <div class="p-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="${sourceColor} ${sourceBg} border text-[10px] font-bold px-1.5 py-0.5 rounded">${a.source === 'GolfWRX' ? 'WRX' : 'SKRATCH'}</span>
+                            <span class="text-gray-600 text-[10px]">${a.category || 'News'}</span>
+                        </div>
+                        <h4 class="text-white text-sm font-semibold leading-tight line-clamp-2 group-hover:text-radar-green transition-colors">
+                            ${a.title}
+                        </h4>
+                        ${a.preview ? `<p class="text-gray-500 text-xs mt-1 line-clamp-2">${a.preview}</p>` : ''}
+                    </div>
+                </a>
+            `}).join('');
+        }
+        
+        function toggleIntelFeed() {
+            const sidebar = document.getElementById('intel-sidebar');
+            sidebar.classList.toggle('open');
         }
 
         // =================================================================
