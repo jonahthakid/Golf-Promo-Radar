@@ -18,6 +18,9 @@ from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
 
+# Base directory for serving static files
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # =============================================================================
 # RSS FEED CONFIG
 # =============================================================================
@@ -2165,12 +2168,12 @@ CORS(app)
 
 @app.route('/')
 def index():
-    return send_from_directory('.', 'golf_promo_radar.html')
+    return send_from_directory(BASE_DIR, 'golf_promo_radar.html')
 
 
 @app.route('/widget')
 def widget():
-    return send_from_directory('.', 'widget.html')
+    return send_from_directory(BASE_DIR, 'widget.html')
 
 @app.route('/api/promos')
 def get_promos():
@@ -2306,13 +2309,13 @@ def embed_demo():
 @app.route('/deals')
 def deals_index():
     """SEO index page listing all brands"""
-    return send_from_directory('.', 'deals_index.html')
+    return send_from_directory(BASE_DIR, 'deals_index.html')
 
 
 @app.route('/deals/<brand_slug>')
 def brand_deals_page(brand_slug):
     """SEO landing page for specific brand deals"""
-    return send_from_directory('.', 'brand_deals.html')
+    return send_from_directory(BASE_DIR, 'brand_deals.html')
 
 
 @app.route('/api/brands')
@@ -2444,15 +2447,15 @@ def check_admin_auth():
 @app.route('/admin')
 def admin_dashboard():
     if not session.get('admin_authenticated'):
-        return send_from_directory('.', 'admin_login.html')
-    return send_from_directory('.', 'admin_dashboard.html')
+        return send_from_directory(BASE_DIR, 'admin_login.html')
+    return send_from_directory(BASE_DIR, 'admin_dashboard.html')
 
 
 @app.route('/admin/timeline')
 def admin_timeline():
     if not session.get('admin_authenticated'):
-        return send_from_directory('.', 'admin_login.html')
-    return send_from_directory('.', 'admin_timeline.html')
+        return send_from_directory(BASE_DIR, 'admin_login.html')
+    return send_from_directory(BASE_DIR, 'admin_timeline.html')
 
 
 @app.route('/admin/login', methods=['POST'])
