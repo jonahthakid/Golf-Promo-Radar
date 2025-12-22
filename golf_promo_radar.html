@@ -873,6 +873,9 @@
                     } catch (e) {}
                 }
                 
+                // First seen timestamp
+                const firstSeenText = p.first_seen ? formatFirstSeen(p.first_seen) : '';
+                
                 return `
                     <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
                         <div class="target-corner tl"></div>
@@ -891,7 +894,7 @@
                                     </div>
                                     <div>
                                         <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
-                                        <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}${expiresText}</span>
+                                        <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}${expiresText}${firstSeenText ? ` <span class="text-gray-600">• ${firstSeenText}</span>` : ''}</span>
                                     </div>
                                 </div>
                                 ${badge}
@@ -946,13 +949,14 @@
             grid.innerHTML = codes.map(c => {
                 const linkUrl = c.affiliate_url || c.url || '#';
                 const isNew = c.is_new;
+                const firstSeenText = c.first_seen ? formatFirstSeen(c.first_seen) : '';
                 return `
                 <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
                     ${isNew ? '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>' : ''}
                     <div class="flex justify-between items-center">
                         <div>
                             <a href="${linkUrl}" target="_blank" rel="noopener" class="font-loud text-xl text-white hover:text-radar-green transition-colors">${c.brand} <i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i></a>
-                            <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}</p>
+                            <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}${firstSeenText ? ` • ${firstSeenText}` : ''}</p>
                         </div>
                         <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-mono text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
                             ${c.code}
@@ -1327,6 +1331,28 @@
         // =================================================================
         // HELPERS
         // =================================================================
+        function formatFirstSeen(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const date = new Date(dateStr);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffHours / 24);
+                
+                if (diffHours < 1) return 'Just now';
+                if (diffHours < 24) return `${diffHours}h ago`;
+                if (diffDays === 1) return 'Yesterday';
+                if (diffDays < 7) return `${diffDays}d ago`;
+                if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+                
+                // Show actual date for older deals
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            } catch (e) {
+                return '';
+            }
+        }
+        
         function getCategoryIcon(category) {
             const icons = {
                 apparel: 'fa-tshirt',
