@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skratch Radar - Admin Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'radar-dark': '#0a0a0a',
+                        'radar-green': '#00ff88',
+                        'radar-red': '#ff3333',
+                    },
+                    fontFamily: {
+                        'loud': ['Impact', 'Haettenschweiler', 'Arial Narrow Bold', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #0a0a0a; }
+    </style>
+</head>
+<body class="text-white min-h-screen flex items-center justify-center">
+    <div class="w-full max-w-md p-8">
+        <div class="text-center mb-8">
+            <h1 class="font-loud text-4xl tracking-wider mb-2">SKRATCH RADAR</h1>
+            <p class="text-gray-500">Admin Access Required</p>
+        </div>
+        
+        <form id="login-form" class="space-y-6">
+            <div>
+                <label class="block text-gray-500 text-sm mb-2">PASSWORD</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    class="w-full bg-radar-dark border border-gray-700 px-4 py-3 text-white focus:border-radar-green focus:outline-none transition-colors"
+                    placeholder="Enter admin password"
+                    autofocus
+                >
+            </div>
+            
+            <div id="error-message" class="hidden text-radar-red text-sm text-center py-2 bg-radar-red/10 border border-radar-red/30">
+                Invalid password
+            </div>
+            
+            <button 
+                type="submit" 
+                class="w-full py-3 bg-radar-green text-black font-loud text-xl tracking-wider hover:bg-green-400 transition-colors"
+            >
+                ACCESS DASHBOARD
+            </button>
+        </form>
+        
+        <div class="text-center mt-8">
+            <a href="/" class="text-gray-600 hover:text-gray-400 text-sm">
+                <i class="fas fa-arrow-left mr-2"></i>Back to Radar
+            </a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('error-message');
+            
+            errorEl.classList.add('hidden');
+            
+            try {
+                const response = await fetch('/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    window.location.href = '/admin';
+                } else {
+                    errorEl.classList.remove('hidden');
+                    document.getElementById('password').value = '';
+                    document.getElementById('password').focus();
+                }
+            } catch (error) {
+                errorEl.textContent = 'Connection error';
+                errorEl.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
