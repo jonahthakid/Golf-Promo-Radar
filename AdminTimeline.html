@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deal Timeline | Skratch Radar Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=JetBrains+Mono&display=swap');
+        body { font-family: 'Space Grotesk', sans-serif; background: #0a0a0a; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-black border-b border-gray-800 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <a href="/admin" class="text-gray-500 hover:text-white">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <h1 class="text-xl font-bold">
+                    <i class="fas fa-timeline text-green-500 mr-2"></i>Deal Timeline
+                </h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="stats-summary" class="text-gray-500 text-sm font-mono"></span>
+                <button onclick="fetchData()" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-black font-bold rounded">
+                    <i class="fas fa-sync mr-2"></i>Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-4 gap-4 mb-8">
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <div class="text-gray-500 text-xs uppercase mb-1">Today</div>
+                <div id="stat-today" class="text-3xl font-bold text-green-500">-</div>
+                <div class="text-gray-600 text-xs">new deals</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <div class="text-gray-500 text-xs uppercase mb-1">This Week</div>
+                <div id="stat-week" class="text-3xl font-bold text-blue-500">-</div>
+                <div class="text-gray-600 text-xs">new deals</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <div class="text-gray-500 text-xs uppercase mb-1">Active Now</div>
+                <div id="stat-active" class="text-3xl font-bold text-yellow-500">-</div>
+                <div class="text-gray-600 text-xs">deals live</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <div class="text-gray-500 text-xs uppercase mb-1">All Time</div>
+                <div id="stat-total" class="text-3xl font-bold text-gray-400">-</div>
+                <div class="text-gray-600 text-xs">tracked</div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-lg font-bold mb-4">Deals Over Time (Last 30 Days)</h2>
+            <canvas id="timeline-chart" height="100"></canvas>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex gap-4 mb-4">
+            <input type="text" id="search" placeholder="Search brand or promo..." 
+                   class="flex-1 bg-gray-900 border border-gray-700 rounded px-4 py-2 text-white focus:border-green-500 outline-none"
+                   oninput="filterTable()">
+            <select id="date-filter" class="bg-gray-900 border border-gray-700 rounded px-4 py-2 text-white" onchange="filterTable()">
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="week" selected>This Week</option>
+                <option value="month">This Month</option>
+            </select>
+        </div>
+
+        <!-- Timeline Table -->
+        <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-gray-800">
+                    <tr>
+                        <th class="text-left px-4 py-3 text-xs text-gray-500 uppercase">Brand</th>
+                        <th class="text-left px-4 py-3 text-xs text-gray-500 uppercase">Promo</th>
+                        <th class="text-left px-4 py-3 text-xs text-gray-500 uppercase">First Seen</th>
+                        <th class="text-left px-4 py-3 text-xs text-gray-500 uppercase">Last Seen</th>
+                        <th class="text-left px-4 py-3 text-xs text-gray-500 uppercase">Duration</th>
+                    </tr>
+                </thead>
+                <tbody id="timeline-table">
+                    <tr>
+                        <td colspan="5" class="px-4 py-8 text-center text-gray-600">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Loading...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="table-info" class="text-gray-600 text-sm mt-4 text-center"></div>
+    </main>
+
+    <script>
+        let allData = [];
+        let chart = null;
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/deal-history');
+                const data = await response.json();
+                
+                // Update stats
+                document.getElementById('stat-today').textContent = data.deals_today;
+                document.getElementById('stat-week').textContent = data.deals_this_week;
+                document.getElementById('stat-active').textContent = data.current_active_deals;
+                document.getElementById('stat-total').textContent = data.total_deals_tracked;
+                
+                allData = data.timeline;
+                
+                // Build chart
+                buildChart(data.timeline);
+                
+                // Render table
+                filterTable();
+                
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        }
+
+        function buildChart(timeline) {
+            // Group deals by date
+            const dealsByDate = {};
+            const now = new Date();
+            
+            // Initialize last 30 days
+            for (let i = 29; i >= 0; i--) {
+                const date = new Date(now);
+                date.setDate(date.getDate() - i);
+                const key = date.toISOString().split('T')[0];
+                dealsByDate[key] = 0;
+            }
+            
+            // Count deals per date
+            timeline.forEach(deal => {
+                if (deal.first_seen) {
+                    const date = deal.first_seen.split('T')[0];
+                    if (dealsByDate.hasOwnProperty(date)) {
+                        dealsByDate[date]++;
+                    }
+                }
+            });
+            
+            const labels = Object.keys(dealsByDate).map(d => {
+                const date = new Date(d);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            const values = Object.values(dealsByDate);
+            
+            const ctx = document.getElementById('timeline-chart').getContext('2d');
+            
+            if (chart) chart.destroy();
+            
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'New Deals',
+                        data: values,
+                        backgroundColor: 'rgba(34, 197, 94, 0.5)',
+                        borderColor: 'rgb(34, 197, 94)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#666' },
+                            grid: { color: '#222' }
+                        },
+                        x: {
+                            ticks: { color: '#666', maxRotation: 45 },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function filterTable() {
+            const search = document.getElementById('search').value.toLowerCase();
+            const dateFilter = document.getElementById('date-filter').value;
+            const now = new Date();
+            
+            let filtered = allData.filter(deal => {
+                // Search filter
+                if (search && !deal.brand.toLowerCase().includes(search) && !deal.promo.toLowerCase().includes(search)) {
+                    return false;
+                }
+                
+                // Date filter
+                if (dateFilter !== 'all' && deal.first_seen) {
+                    const dealDate = new Date(deal.first_seen);
+                    const daysDiff = Math.floor((now - dealDate) / (1000 * 60 * 60 * 24));
+                    
+                    if (dateFilter === 'today' && daysDiff > 0) return false;
+                    if (dateFilter === 'week' && daysDiff > 7) return false;
+                    if (dateFilter === 'month' && daysDiff > 30) return false;
+                }
+                
+                return true;
+            });
+            
+            renderTable(filtered);
+        }
+
+        function renderTable(data) {
+            const tbody = document.getElementById('timeline-table');
+            const info = document.getElementById('table-info');
+            
+            if (data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-4 py-8 text-center text-gray-600">
+                            No deals found
+                        </td>
+                    </tr>
+                `;
+                info.textContent = '';
+                return;
+            }
+            
+            tbody.innerHTML = data.slice(0, 100).map(deal => {
+                const firstSeen = deal.first_seen ? new Date(deal.first_seen).toLocaleDateString('en-US', { 
+                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                }) : '-';
+                const lastSeen = deal.last_seen ? new Date(deal.last_seen).toLocaleDateString('en-US', { 
+                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                }) : '-';
+                const duration = deal.days_active ? `${deal.days_active}d` : '-';
+                
+                // Is it new (today)?
+                const isNew = deal.first_seen && deal.first_seen.split('T')[0] === new Date().toISOString().split('T')[0];
+                
+                return `
+                    <tr class="border-t border-gray-800 hover:bg-gray-800/50 ${isNew ? 'bg-green-900/20' : ''}">
+                        <td class="px-4 py-3">
+                            <span class="font-bold">${deal.brand}</span>
+                            ${isNew ? '<span class="ml-2 text-[10px] bg-green-500 text-black px-1 py-0.5 rounded">NEW</span>' : ''}
+                        </td>
+                        <td class="px-4 py-3 text-gray-400 text-sm max-w-md truncate">${deal.promo}</td>
+                        <td class="px-4 py-3 text-sm font-mono text-green-500">${firstSeen}</td>
+                        <td class="px-4 py-3 text-sm font-mono text-gray-500">${lastSeen}</td>
+                        <td class="px-4 py-3 text-sm font-mono ${deal.days_active > 7 ? 'text-yellow-500' : 'text-gray-500'}">${duration}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            info.textContent = `Showing ${Math.min(data.length, 100)} of ${data.length} deals`;
+        }
+
+        // Initial load
+        fetchData();
+    </script>
+</body>
+</html>
