@@ -514,7 +514,7 @@
                 GOLF PROMO <span class="text-radar-green">RADAR</span>
             </div>
             <p class="text-gray-600 text-xs font-mono uppercase tracking-widest">
-                Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins • Skratch Golf Aesthetics
+                Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins
             </p>
         </div>
     </footer>
@@ -1091,6 +1091,14 @@
                 if (a.is_new && !b.is_new) return -1;
                 if (!a.is_new && b.is_new) return 1;
                 return (b.discount || 0) - (a.discount || 0);
+            });
+            
+            // Limit to 3 deals per brand
+            const brandCounts = {};
+            deals = deals.filter(d => {
+                const brand = d.brand?.toLowerCase() || 'unknown';
+                brandCounts[brand] = (brandCounts[brand] || 0) + 1;
+                return brandCounts[brand] <= 3;
             });
 
             if (deals.length === 0) {
