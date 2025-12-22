@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skratch Radar - Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'radar-dark': '#0a0a0a',
+                        'radar-green': '#00ff88',
+                        'radar-red': '#ff3333',
+                        'radar-orange': '#ff9500',
+                        'radar-grid': '#1a1a1a',
+                    },
+                    fontFamily: {
+                        'loud': ['Impact', 'Haettenschweiler', 'Arial Narrow Bold', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #0a0a0a; }
+        .stat-card {
+            background: linear-gradient(135deg, #1a1a1a 0%, #0f0f0f 100%);
+            border: 1px solid #2a2a2a;
+        }
+        .stat-card:hover {
+            border-color: #00ff88;
+        }
+        .table-row:hover {
+            background: rgba(0, 255, 136, 0.05);
+        }
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen">
+    <!-- Header -->
+    <header class="border-b border-radar-grid bg-radar-dark/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="/" class="text-gray-400 hover:text-white">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <h1 class="font-loud text-2xl tracking-wider">SKRATCH RADAR</h1>
+                <span class="text-radar-green text-sm font-bold px-2 py-1 bg-radar-green/10 border border-radar-green/30">ADMIN</span>
+                <nav class="flex items-center gap-2 ml-4 border-l border-gray-800 pl-4">
+                    <a href="/admin" class="text-white text-sm px-3 py-1 bg-gray-800 rounded">Dashboard</a>
+                    <a href="/admin/timeline" class="text-gray-400 hover:text-white text-sm px-3 py-1 hover:bg-gray-800 rounded">
+                        <i class="fas fa-timeline mr-1"></i>Timeline
+                    </a>
+                </nav>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="last-refresh" class="text-gray-500 text-sm"></span>
+                <button onclick="refreshData()" class="px-4 py-2 bg-radar-green/10 border border-radar-green text-radar-green hover:bg-radar-green hover:text-black transition-all font-bold text-sm">
+                    <i class="fas fa-sync-alt mr-2"></i>REFRESH
+                </button>
+                <button onclick="logout()" class="px-4 py-2 bg-radar-red/10 border border-radar-red text-radar-red hover:bg-radar-red hover:text-black transition-all font-bold text-sm">
+                    <i class="fas fa-sign-out-alt mr-2"></i>LOGOUT
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        <!-- Top Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="stat-card p-6 rounded transition-all">
+                <div class="text-gray-500 text-sm mb-1">TOTAL REVENUE</div>
+                <div id="stat-revenue" class="font-loud text-3xl text-radar-green loading">$0.00</div>
+                <div class="text-gray-600 text-xs mt-1">Last 30 days</div>
+            </div>
+            <div class="stat-card p-6 rounded transition-all">
+                <div class="text-gray-500 text-sm mb-1">COMMISSION EARNED</div>
+                <div id="stat-payout" class="font-loud text-3xl text-radar-orange loading">$0.00</div>
+                <div class="text-gray-600 text-xs mt-1">Last 30 days</div>
+            </div>
+            <div class="stat-card p-6 rounded transition-all">
+                <div class="text-gray-500 text-sm mb-1">CONVERSIONS</div>
+                <div id="stat-actions" class="font-loud text-3xl text-white loading">0</div>
+                <div class="text-gray-600 text-xs mt-1">Last 30 days</div>
+            </div>
+            <div class="stat-card p-6 rounded transition-all">
+                <div class="text-gray-500 text-sm mb-1">ACTIVE PARTNERS</div>
+                <div id="stat-campaigns" class="font-loud text-3xl text-white loading">0</div>
+                <div class="text-gray-600 text-xs mt-1">Impact campaigns</div>
+            </div>
+        </div>
+
+        <!-- Radar Stats Row -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <div class="stat-card p-4 rounded">
+                <div class="text-gray-500 text-xs mb-1">BRANDS MONITORED</div>
+                <div id="stat-brands" class="font-loud text-2xl text-white loading">0</div>
+            </div>
+            <div class="stat-card p-4 rounded">
+                <div class="text-gray-500 text-xs mb-1">ACTIVE PROMOS</div>
+                <div id="stat-promos" class="font-loud text-2xl text-radar-green loading">0</div>
+            </div>
+            <div class="stat-card p-4 rounded">
+                <div class="text-gray-500 text-xs mb-1">PROMO CODES</div>
+                <div id="stat-codes" class="font-loud text-2xl text-radar-orange loading">0</div>
+            </div>
+            <div class="stat-card p-4 rounded">
+                <div class="text-gray-500 text-xs mb-1">CLEARANCE</div>
+                <div id="stat-clearance" class="font-loud text-2xl text-white loading">0</div>
+            </div>
+            <div class="stat-card p-4 rounded">
+                <div class="text-gray-500 text-xs mb-1">PARTNER DEALS</div>
+                <div id="stat-impact-deals" class="font-loud text-2xl text-white loading">0</div>
+            </div>
+        </div>
+
+        <!-- Affiliate Coverage -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="stat-card p-6 rounded col-span-1">
+                <div class="text-gray-500 text-sm mb-3">AFFILIATE LINK COVERAGE</div>
+                <div class="flex items-end gap-4">
+                    <div>
+                        <div id="stat-with-affiliate" class="font-loud text-4xl text-radar-green loading">0</div>
+                        <div class="text-gray-600 text-xs">With tracking</div>
+                    </div>
+                    <div class="text-gray-600 text-2xl">/</div>
+                    <div>
+                        <div id="stat-without-affiliate" class="font-loud text-4xl text-gray-500 loading">0</div>
+                        <div class="text-gray-600 text-xs">Without tracking</div>
+                    </div>
+                </div>
+                <div class="mt-4 h-2 bg-gray-800 rounded overflow-hidden">
+                    <div id="affiliate-bar" class="h-full bg-radar-green transition-all" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="stat-card p-6 rounded col-span-2">
+                <div class="text-gray-500 text-sm mb-3">PROMOS BY CATEGORY</div>
+                <div id="category-chart" class="flex gap-2 flex-wrap"></div>
+            </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Top Performing Campaigns -->
+            <div class="stat-card rounded overflow-hidden">
+                <div class="px-6 py-4 border-b border-radar-grid flex items-center justify-between">
+                    <h2 class="font-loud text-xl tracking-wider">TOP PERFORMERS</h2>
+                    <span class="text-gray-500 text-sm">By commission</span>
+                </div>
+                <div id="top-campaigns" class="divide-y divide-radar-grid">
+                    <div class="p-6 text-center text-gray-600 loading">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Recent Actions -->
+            <div class="stat-card rounded overflow-hidden">
+                <div class="px-6 py-4 border-b border-radar-grid flex items-center justify-between">
+                    <h2 class="font-loud text-xl tracking-wider">RECENT CONVERSIONS</h2>
+                    <span class="text-gray-500 text-sm">Last 30 days</span>
+                </div>
+                <div id="recent-actions" class="divide-y divide-radar-grid max-h-96 overflow-y-auto">
+                    <div class="p-6 text-center text-gray-600 loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Campaigns Table -->
+        <div class="stat-card rounded overflow-hidden mt-6">
+            <div class="px-6 py-4 border-b border-radar-grid flex items-center justify-between">
+                <h2 class="font-loud text-xl tracking-wider">ALL PARTNER CAMPAIGNS</h2>
+                <input type="text" id="campaign-search" placeholder="Search campaigns..." class="bg-radar-dark border border-radar-grid px-4 py-2 text-sm rounded focus:border-radar-green focus:outline-none">
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-radar-grid/50">
+                        <tr>
+                            <th class="text-left px-6 py-3 text-gray-500 font-normal">CAMPAIGN</th>
+                            <th class="text-left px-6 py-3 text-gray-500 font-normal">ADVERTISER</th>
+                            <th class="text-right px-6 py-3 text-gray-500 font-normal">ACTIONS</th>
+                            <th class="text-right px-6 py-3 text-gray-500 font-normal">REVENUE</th>
+                            <th class="text-right px-6 py-3 text-gray-500 font-normal">COMMISSION</th>
+                            <th class="text-center px-6 py-3 text-gray-500 font-normal">LINK</th>
+                        </tr>
+                    </thead>
+                    <tbody id="campaigns-table" class="divide-y divide-radar-grid">
+                        <tr><td colspan="6" class="px-6 py-8 text-center text-gray-600 loading">Loading campaigns...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let impactStats = null;
+        let radarStats = null;
+        let allCampaigns = [];
+
+        function handleAuthError(response) {
+            if (response.status === 401) {
+                window.location.href = '/admin';
+                return true;
+            }
+            return false;
+        }
+
+        async function logout() {
+            await fetch('/admin/logout');
+            window.location.href = '/admin';
+        }
+
+        async function fetchImpactStats() {
+            try {
+                const response = await fetch('/api/admin/stats');
+                if (handleAuthError(response)) return;
+                if (!response.ok) throw new Error('Failed to fetch stats');
+                impactStats = await response.json();
+                updateImpactUI();
+            } catch (error) {
+                console.error('Impact stats error:', error);
+                document.getElementById('stat-revenue').textContent = 'N/A';
+                document.getElementById('stat-payout').textContent = 'N/A';
+                document.getElementById('stat-actions').textContent = 'N/A';
+            }
+        }
+
+        async function fetchRadarStats() {
+            try {
+                const response = await fetch('/api/admin/radar-stats');
+                if (handleAuthError(response)) return;
+                radarStats = await response.json();
+                updateRadarUI();
+            } catch (error) {
+                console.error('Radar stats error:', error);
+            }
+        }
+
+        async function fetchActions() {
+            try {
+                const response = await fetch('/api/admin/actions');
+                if (handleAuthError(response)) return;
+                const data = await response.json();
+                updateActionsUI(data.actions || []);
+            } catch (error) {
+                console.error('Actions error:', error);
+                document.getElementById('recent-actions').innerHTML = '<div class="p-6 text-center text-gray-600">Unable to load conversions</div>';
+            }
+        }
+
+        function updateImpactUI() {
+            if (!impactStats) return;
+
+            document.getElementById('stat-revenue').textContent = `$${impactStats.total_revenue?.toLocaleString() || '0.00'}`;
+            document.getElementById('stat-revenue').classList.remove('loading');
+            
+            document.getElementById('stat-payout').textContent = `$${impactStats.total_payout?.toLocaleString() || '0.00'}`;
+            document.getElementById('stat-payout').classList.remove('loading');
+            
+            document.getElementById('stat-actions').textContent = impactStats.total_actions || 0;
+            document.getElementById('stat-actions').classList.remove('loading');
+            
+            document.getElementById('stat-campaigns').textContent = impactStats.total_campaigns || 0;
+            document.getElementById('stat-campaigns').classList.remove('loading');
+
+            // Top performers
+            const topContainer = document.getElementById('top-campaigns');
+            const topCampaigns = impactStats.top_campaigns || [];
+            
+            if (topCampaigns.length === 0) {
+                topContainer.innerHTML = '<div class="p-6 text-center text-gray-600">No conversions yet</div>';
+            } else {
+                topContainer.innerHTML = topCampaigns.map((c, i) => `
+                    <div class="table-row px-6 py-4 flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <span class="text-gray-600 font-bold">${i + 1}</span>
+                            <div>
+                                <div class="font-bold text-white">${c.name}</div>
+                                <div class="text-gray-500 text-xs">${c.advertiser}</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-radar-green">$${c.payout?.toFixed(2) || '0.00'}</div>
+                            <div class="text-gray-500 text-xs">${c.actions} conversion${c.actions !== 1 ? 's' : ''}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // All campaigns table
+            allCampaigns = impactStats.all_campaigns || [];
+            renderCampaignsTable(allCampaigns);
+        }
+
+        function updateRadarUI() {
+            if (!radarStats) return;
+
+            document.getElementById('stat-brands').textContent = radarStats.total_brands_monitored || 0;
+            document.getElementById('stat-brands').classList.remove('loading');
+            
+            document.getElementById('stat-promos').textContent = radarStats.total_promos || 0;
+            document.getElementById('stat-promos').classList.remove('loading');
+            
+            document.getElementById('stat-codes').textContent = radarStats.total_codes || 0;
+            document.getElementById('stat-codes').classList.remove('loading');
+            
+            document.getElementById('stat-clearance').textContent = radarStats.total_clearance || 0;
+            document.getElementById('stat-clearance').classList.remove('loading');
+            
+            document.getElementById('stat-impact-deals').textContent = radarStats.total_impact_deals || 0;
+            document.getElementById('stat-impact-deals').classList.remove('loading');
+
+            // Affiliate coverage
+            const withAffiliate = radarStats.with_affiliate_link || 0;
+            const withoutAffiliate = radarStats.without_affiliate_link || 0;
+            const total = withAffiliate + withoutAffiliate;
+            const percentage = total > 0 ? (withAffiliate / total * 100) : 0;
+
+            document.getElementById('stat-with-affiliate').textContent = withAffiliate;
+            document.getElementById('stat-with-affiliate').classList.remove('loading');
+            document.getElementById('stat-without-affiliate').textContent = withoutAffiliate;
+            document.getElementById('stat-without-affiliate').classList.remove('loading');
+            document.getElementById('affiliate-bar').style.width = `${percentage}%`;
+
+            // Category chart
+            const categories = radarStats.by_category || {};
+            const categoryContainer = document.getElementById('category-chart');
+            const colors = {
+                apparel: 'bg-blue-500',
+                footwear: 'bg-purple-500',
+                accessories: 'bg-pink-500',
+                oem: 'bg-green-500',
+                retailer: 'bg-orange-500',
+                bags: 'bg-yellow-500',
+                tech: 'bg-cyan-500',
+                equipment: 'bg-red-500',
+                experience: 'bg-indigo-500',
+            };
+            
+            categoryContainer.innerHTML = Object.entries(categories).map(([cat, count]) => `
+                <div class="flex items-center gap-2 bg-radar-grid px-3 py-2 rounded">
+                    <div class="w-3 h-3 rounded ${colors[cat] || 'bg-gray-500'}"></div>
+                    <span class="text-gray-400 text-sm capitalize">${cat}</span>
+                    <span class="font-bold text-white">${count}</span>
+                </div>
+            `).join('');
+
+            // Last updated
+            if (radarStats.last_updated) {
+                const date = new Date(radarStats.last_updated);
+                document.getElementById('last-refresh').textContent = `Last scan: ${date.toLocaleTimeString()}`;
+            }
+        }
+
+        function updateActionsUI(actions) {
+            const container = document.getElementById('recent-actions');
+            
+            if (actions.length === 0) {
+                container.innerHTML = '<div class="p-6 text-center text-gray-600">No conversions yet - keep promoting!</div>';
+                return;
+            }
+
+            container.innerHTML = actions.slice(0, 20).map(a => {
+                const date = new Date(a.EventDate || a.CreationDate);
+                return `
+                    <div class="table-row px-6 py-3 flex items-center justify-between">
+                        <div>
+                            <div class="font-bold text-white">${a.CampaignName || 'Unknown'}</div>
+                            <div class="text-gray-500 text-xs">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-radar-green">$${parseFloat(a.Payout || 0).toFixed(2)}</div>
+                            <div class="text-gray-500 text-xs">$${parseFloat(a.Amount || 0).toFixed(2)} sale</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCampaignsTable(campaigns) {
+            const tbody = document.getElementById('campaigns-table');
+            
+            if (campaigns.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-600">No campaigns found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = campaigns.map(c => `
+                <tr class="table-row">
+                    <td class="px-6 py-4 font-bold">${c.name}</td>
+                    <td class="px-6 py-4 text-gray-400">${c.advertiser}</td>
+                    <td class="px-6 py-4 text-right">${c.actions || 0}</td>
+                    <td class="px-6 py-4 text-right">$${(c.revenue || 0).toFixed(2)}</td>
+                    <td class="px-6 py-4 text-right font-bold ${c.payout > 0 ? 'text-radar-green' : 'text-gray-500'}">$${(c.payout || 0).toFixed(2)}</td>
+                    <td class="px-6 py-4 text-center">
+                        ${c.tracking_link ? `<a href="${c.tracking_link}" target="_blank" class="text-radar-green hover:underline"><i class="fas fa-external-link-alt"></i></a>` : '<span class="text-gray-600">-</span>'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Search campaigns
+        document.getElementById('campaign-search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = allCampaigns.filter(c => 
+                c.name?.toLowerCase().includes(query) || 
+                c.advertiser?.toLowerCase().includes(query)
+            );
+            renderCampaignsTable(filtered);
+        });
+
+        async function refreshData() {
+            // Trigger a scrape refresh
+            try {
+                await fetch('/api/refresh', { method: 'POST' });
+            } catch (e) {}
+            
+            // Refresh all data
+            await Promise.all([
+                fetchImpactStats(),
+                fetchRadarStats(),
+                fetchActions()
+            ]);
+        }
+
+        // Initial load
+        Promise.all([
+            fetchImpactStats(),
+            fetchRadarStats(),
+            fetchActions()
+        ]);
+
+        // Auto-refresh every 60 seconds
+        setInterval(() => {
+            fetchRadarStats();
+        }, 60000);
+    </script>
+</body>
+</html>
