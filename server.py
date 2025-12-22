@@ -493,7 +493,7 @@ BRANDS = [
     {"name": "Golf Apparel Shop", "url": "https://www.golfapparelshop.com", "category": "retailer", "tags": ["apparel", "value"]},
     {"name": "Trendy Golf", "url": "https://www.trendygolfusa.com", "category": "retailer", "tags": ["premium", "curated"]},
     {"name": "Worldwide Golf Shops", "url": "https://www.worldwidegolfshops.com", "category": "retailer", "tags": ["multi-brand"]},
-    {"name": "Golf Discount", "url": "https://www.golfdiscount.com", "category": "retailer", "tags": ["discount", "seattle"]},
+    {"name": "Golf Discount", "url": "https://www.golfdiscount.com", "category": "retailer", "tags": ["discount", "seattle"], "logo_url": "https://www.golfdiscount.com/media/logo/stores/1/gd-logo.png"},
     {"name": "Budget Golf", "url": "https://www.budgetgolf.com", "category": "retailer", "tags": ["discount"]},
     {"name": "Fairway Golf", "url": "https://fairwaygolfusa.com", "category": "retailer", "tags": ["japanese", "jdm"]},
     {"name": "Golf Locker", "url": "https://www.golflocker.com", "category": "retailer", "tags": ["apparel", "accessories"]},
@@ -1300,7 +1300,8 @@ def scrape_brand(brand):
         soup = BeautifulSoup(response.text, 'html.parser')
         
         # Extract hero/product image BEFORE decomposing elements
-        result["image"] = extract_image(soup, brand["url"])
+        # Use manual logo_url override if provided (for retailers that show other brand logos)
+        result["image"] = brand.get("logo_url") or extract_image(soup, brand["url"])
         
         # =================================================================
         # CHECK FOR EMAIL SIGNUP OFFERS BEFORE REMOVING FOOTER
