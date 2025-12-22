@@ -2171,6 +2171,11 @@ def index():
     return send_from_directory(BASE_DIR, 'golf_promo_radar.html')
 
 
+@app.route('/preview')
+def preview():
+    return send_from_directory(BASE_DIR, 'golf_promo_radar_preview.html')
+
+
 @app.route('/widget')
 def widget():
     return send_from_directory(BASE_DIR, 'widget.html')
@@ -2192,6 +2197,115 @@ def status():
         "data_file_exists": os.path.exists(DATA_FILE),
         "brand_count": len(BRANDS),
         "refresh_interval_minutes": REFRESH_INTERVAL_MINUTES
+    })
+
+
+# =============================================================================
+# CLICK TRACKING
+# =============================================================================
+CLICKS_FILE = "clicks.json"
+
+def load_clicks():
+    """Load click tracking data"""
+    if os.path.exists(CLICKS_FILE):
+        try:
+            with open(CLICKS_FILE) as f:
+                return json.load(f)
+        except:
+            pass
+    return {"clicks": [], "stats": {"total": 0, "by_brand": {}, "by_date": {}}}
+
+def save_click(brand, url, source="radar"):
+    """Save a click event"""
+    data = load_clicks()
+    now = datetime.now()
+    date_key = now.strftime("%Y-%m-%d")
+    
+    # Add click record
+    data["clicks"].append({
+        "brand": brand,
+        "url": url,
+        "source": source,
+        "timestamp": now.isoformat()
+    })
+    
+    # Keep only last 10000 clicks
+    if len(data["clicks"]) > 10000:
+        data["clicks"] = data["clicks"][-10000:]
+    
+    # Update stats
+    data["stats"]["total"] += 1
+    data["stats"]["by_brand"][brand] = data["stats"]["by_brand"].get(brand, 0) + 1
+    data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
+    
+    with open(CLICKS_FILE, "w") as f:
+        json.dump(data, f)
+    
+    return data["stats"]["total"]
+
+def add_subid(url, source="radar"):
+    """Add subId parameter to affiliate URL for Impact tracking"""
+    if not url:
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}subId={source}"
+
+@app.route('/go')
+def track_click():
+    """Track click and redirect to affiliate URL with subId"""
+    url = request.args.get('url', '')
+    brand = request.args.get('brand', 'Unknown')
+    source = request.args.get('source', 'radar')
+    
+    if not url:
+        return "Missing URL", 400
+    
+    # Log the click
+    save_click(brand, url, source)
+    
+    # Add subId for Impact tracking
+    final_url = add_subid(url, source)
+    
+    # Redirect
+    return Response(
+        status=302,
+        headers={"Location": final_url}
+    )
+
+@app.route('/api/clicks')
+def get_clicks():
+    """Get click statistics"""
+    data = load_clicks()
+    
+    # Calculate additional stats
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    week_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    
+    clicks_today = data["stats"]["by_date"].get(today, 0)
+    clicks_this_week = sum(
+        count for date, count in data["stats"]["by_date"].items()
+        if date >= week_ago
+    )
+    
+    # Top brands by clicks
+    top_brands = sorted(
+        data["stats"]["by_brand"].items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:20]
+    
+    # Recent clicks
+    recent = data["clicks"][-50:] if data["clicks"] else []
+    recent.reverse()
+    
+    return jsonify({
+        "total_clicks": data["stats"]["total"],
+        "clicks_today": clicks_today,
+        "clicks_this_week": clicks_this_week,
+        "top_brands": top_brands,
+        "by_date": data["stats"]["by_date"],
+        "recent_clicks": recent
     })
 
 
