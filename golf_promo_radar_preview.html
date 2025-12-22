@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOLF PROMO RADAR // SKRATCH EDITION</title>
+    
+    <!-- Fonts - Gazetta (headers) and Inter (body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom font Gazetta - loaded from local/CDN -->
+    <style>
+        @font-face {
+            font-family: 'Gazetta';
+            src: url('https://fonts.cdnfonts.com/s/29183/Gazetta-Bold.woff') format('woff');
+            font-weight: 700;
+            font-style: normal;
+        }
+    </style>
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        radar: {
+                            black: '#050505',
+                            dark: '#0a0a0a',
+                            grid: '#1a1a1a',
+                            green: '#ffffff',
+                            greenDim: 'rgba(255, 255, 255, 0.2)',
+                            red: '#ff3333',
+                            orange: '#ff9500',
+                            white: '#e5e5e5'
+                        }
+                    },
+                    fontFamily: {
+                        loud: ['Gazetta', 'Impact', 'sans-serif'],
+                        tech: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'spin-slow': 'spin 4s linear infinite',
+                        'ping-slow': 'ping 3s cubic-bezier(0, 0, 0.2, 1) infinite',
+                        'scan': 'scan 4s linear infinite',
+                        'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        scan: {
+                            '0%': { transform: 'translateY(-100%)' },
+                            '100%': { transform: 'translateY(100%)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #050505;
+            color: #e5e5e5;
+            overflow-x: hidden;
+            font-family: 'Inter', sans-serif;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Clean radar sweep - no green tint */
+        .radar-sweep {
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(255, 255, 255, 0.1) 200deg, rgba(255, 255, 255, 0.3) 360deg);
+            border-radius: 50%;
+        }
+
+        /* Remove CRT overlay - clean look */
+        .crt-overlay {
+            display: none;
+        }
+
+        .glitch-text:hover {
+            text-shadow: 2px 0 #ff3333, -2px 0 #ffffff;
+        }
+
+        .blip {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: #ffffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px #ffffff;
+            opacity: 0;
+            animation: blipAnim 4s infinite;
+        }
+
+        @keyframes blipAnim {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            45% { opacity: 0; }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+        }
+        
+        /* Target Lock Corners */
+        .target-corner {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-color: #ffffff;
+            border-style: solid;
+            transition: all 0.3s ease;
+            opacity: 0;
+        }
+        .group:hover .target-corner {
+            opacity: 1;
+            width: 20px;
+            height: 20px;
+        }
+        .tl { top: 0; left: 0; border-width: 2px 0 0 2px; }
+        .tr { top: 0; right: 0; border-width: 2px 2px 0 0; }
+        .bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; }
+        .br { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+        .lock-status {
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+        .group:hover .lock-status {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Scrollbar - clean black/white */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #333; border: 1px solid #555; }
+        
+        /* Line clamp for article titles */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        /* Vertical text for sidebar toggle */
+        .writing-vertical {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+        }
+        
+        /* Sidebar open state */
+        #intel-sidebar.open {
+            transform: translateX(0);
+        }
+
+        /* New code highlight - pulsing red/orange border */
+        .new-code-highlight {
+            animation: newCodePulse 1s ease-in-out infinite;
+            border-color: #ff3333 !important;
+        }
+
+        @keyframes newCodePulse {
+            0%, 100% { 
+                box-shadow: 0 0 20px rgba(255, 51, 51, 0.4);
+                border-color: #ff3333;
+            }
+            50% { 
+                box-shadow: 0 0 40px rgba(255, 149, 0, 0.6);
+                border-color: #ff9500;
+            }
+        }
+
+        /* Code copy button */
+        .code-copy {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .code-copy:hover {
+            background: #ffffff;
+            color: black;
+        }
+        .code-copy.copied {
+            background: #ffffff;
+            color: black;
+        }
+
+        /* Deal card as link */
+        a.deal-card {
+            text-decoration: none;
+        }
+
+        /* Scanning state */
+        .scanning .radar-sweep {
+            animation-duration: 1s;
+        }
+
+        /* Marquee continuous scroll */
+        .marquee-track {
+            animation: marqueeScroll 20s linear infinite;
+        }
+        
+        .marquee-track a {
+            cursor: pointer;
+        }
+
+        @keyframes marqueeScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+    </style>
+</head>
+<body class="font-tech min-h-screen flex flex-col relative">
+
+    <!-- CRT Effect Overlay -->
+    <!-- Clean design - no CRT overlay -->
+
+    <!-- Incoming Transmission Popup -->
+    <div id="transmission-popup" class="fixed top-20 left-1/2 -translate-x-1/2 bg-radar-dark border-2 border-radar-red px-8 py-4 z-[100] shadow-[0_0_30px_rgba(255,51,51,0.3)] transition-all duration-500 opacity-0 -translate-y-10 pointer-events-none">
+        <button onclick="dismissTransmission()" class="absolute top-2 right-2 text-gray-600 hover:text-white text-xl">&times;</button>
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-radar-red/20 rounded-full flex items-center justify-center animate-pulse">
+                <i class="fas fa-satellite-dish text-radar-red text-2xl"></i>
+            </div>
+            <div>
+                <div class="text-radar-red font-loud text-xl tracking-widest animate-pulse">
+                    ⚡ INCOMING TRANSMISSION
+                </div>
+                <div id="transmission-brand" class="text-white font-loud text-2xl">
+                    BRAND NAME
+                </div>
+                <div id="transmission-detail" class="text-radar-green font-bold tracking-widest font-tech">
+                    DEAL DETAILS
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation / Header -->
+    <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden">
+                    <div class="absolute inset-0 radar-sweep animate-spin-slow"></div>
+                    <i class="fas fa-crosshairs text-radar-green relative z-10 text-sm"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <!-- Skratch Logo -->
+                        <svg width="100" height="50" viewBox="0 0 126 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-8 w-auto">
+                            <g clip-path="url(#clip0_86_699)">
+                            <path d="M107.845 37.0542V54.4735C109.687 53.5255 111.412 52.5201 113.01 51.4643V39.8802C111.31 38.8819 109.588 37.9411 107.845 37.0542Z" fill="white"/>
+                            <path d="M48.8327 12.0687C48.8327 11.3756 48.6347 10.8442 48.2388 10.4707C47.8429 10.0973 47.2915 9.968 46.5916 10.0865C45.7362 10.2337 44.8808 10.3881 44.0254 10.5569C44.0254 15.9863 44.0254 21.4157 44.0254 26.8415C45.2166 26.5147 46.1639 26.1054 46.8532 25.5847C47.5566 25.0568 48.0621 24.3853 48.3696 23.5594C48.6771 22.7335 48.8327 21.6958 48.8327 20.439C48.8327 17.6489 48.8327 14.8588 48.8327 12.0651V12.0687Z" fill="white"/>
+                            <path d="M126 32.0018C126 14.3276 97.7926 0 63 0C28.2074 0 0 14.3276 0 32.0018C0 38.214 3.48174 44.0096 9.51204 48.9184C10.7386 48.1284 11.9793 47.3671 13.2306 46.6346V51.6259C14.5102 52.4625 15.8675 53.2633 17.3026 54.0318C17.4829 53.5506 17.5713 53.0407 17.5713 52.4949V48.9794C17.5713 47.5969 17.2461 46.3365 16.5992 45.209C15.9524 44.0851 15.0263 42.857 13.828 41.5535V41.4889C13.7467 41.4494 13.7078 41.3847 13.7078 41.2985C12.3116 39.7688 11.2688 38.3899 10.5619 37.1224C9.85491 35.8584 9.50497 34.343 9.50497 32.5691V26.5329C9.50497 24.4574 9.99983 22.5399 11.0037 20.8162C12.0076 19.0926 13.4604 17.6599 15.3868 16.5934C17.3168 15.5305 18.8191 15.333 19.8618 15.9255C20.9081 16.5216 21.4348 17.8717 21.4348 19.9473V30.0735C20.134 30.6804 18.8473 31.3123 17.5678 31.9767V22.784C17.5678 22.0048 17.3839 21.4734 17.0199 21.1897C16.6558 20.906 16.1079 20.9599 15.3868 21.3585C14.6622 21.7571 14.1249 22.3065 13.7643 22.9851C13.4038 23.6674 13.2271 24.3999 13.2271 25.1791V30.2818C13.2271 31.5817 13.5063 32.7271 14.0648 33.7254C14.6233 34.7273 15.5035 35.9482 16.7159 37.4204C16.7972 37.5281 16.8785 37.6359 16.9598 37.7472C18.3772 39.3343 19.4836 40.8605 20.2612 42.2789C21.0389 43.7008 21.4348 45.306 21.4348 47.0798V51.1052C21.4348 52.757 21.1025 54.2508 20.438 55.6046C31.6467 60.8221 46.5881 64.0108 62.9929 64.0108C79.3978 64.0108 92.9429 61.1165 103.957 56.3227V13.7817C105.262 14.3742 106.555 14.9955 107.838 15.649V33.0144C109.581 33.8978 111.302 34.8314 113.003 35.8225V18.4678C114.254 19.2004 115.498 19.9616 116.725 20.7552V48.7173C122.603 43.8516 125.993 38.1278 125.993 32.0018H126ZM37.5003 51.0226C36.1606 51.3817 34.8244 51.7731 33.4954 52.1896C31.7598 45.4496 30.0384 38.7634 28.3276 32.1203V53.9743C26.9985 54.477 25.6765 55.0085 24.3616 55.5686V12.8625C25.6765 12.3023 26.9985 11.7709 28.3276 11.2681V31.0969C30.0384 23.8433 31.7633 16.6365 33.4954 9.48348C34.8244 9.06694 36.157 8.67553 37.5003 8.31644C35.6198 15.5951 33.7499 22.9277 31.8941 30.3213C33.7499 37.1655 35.6198 44.0671 37.5003 51.0262V51.0226ZM49.8047 48.5413C48.2777 42.4153 46.7578 36.3252 45.2378 30.271C44.849 30.411 44.4461 30.5475 44.0254 30.6768C44.0254 36.9536 44.0254 43.2304 44.0254 49.5073C42.6469 49.7802 41.2718 50.0818 39.9039 50.4122V7.69882C41.2506 7.37205 42.6044 7.074 43.9583 6.80828C43.9583 6.80828 43.9759 6.80469 43.9865 6.8011C44.0007 6.8011 44.0113 6.79751 44.0254 6.79392C44.902 6.62156 45.7787 6.45997 46.6553 6.31274C48.6312 5.97879 50.1865 6.3271 51.3141 7.29305C52.4417 8.26258 53.0037 9.79947 53.0037 11.875V19.5989C53.0037 21.6781 52.6608 23.4304 51.9751 24.8703C51.2893 26.3139 50.2855 27.4809 48.9635 28.4073C48.9069 28.4468 48.8504 28.4827 48.7938 28.5222C50.4481 35.0002 52.1023 41.5176 53.7637 48.0817C52.4417 48.2074 51.1197 48.3618 49.8012 48.5413H49.8047ZM66.9801 47.7118C66.662 44.3256 66.3403 40.9395 66.0222 37.5533C64.071 37.4958 62.1163 37.4958 60.1651 37.5533C59.847 40.9395 59.5253 44.3256 59.2072 47.7118C57.811 47.7657 56.4112 47.8519 55.0185 47.9668C56.5773 33.6033 58.1362 19.2758 59.6985 4.98412C61.9396 4.90512 64.1806 4.90512 66.4217 4.98053C68.0052 19.2686 69.5888 33.5961 71.1688 47.9632C69.7726 47.8483 68.3764 47.7657 66.9801 47.7082V47.7118ZM84.5196 11.2681C82.876 10.9019 81.2217 10.5823 79.5674 10.3022C79.5674 23.2078 79.5674 36.1133 79.5674 49.0225C78.2065 48.7927 76.8421 48.5916 75.4742 48.4192C75.4742 35.5137 75.4742 22.6081 75.4742 9.69893C73.7633 9.48348 72.049 9.31111 70.3311 9.18543V5.19598C75.0924 5.5443 79.8361 6.24092 84.5231 7.28228V11.2717L84.5196 11.2681ZM99.5317 28.77C98.2097 28.2457 96.8771 27.7502 95.5375 27.2834V16.0548C95.5375 15.2755 95.336 14.5897 94.9295 13.9972C94.523 13.4047 93.9397 12.981 93.1692 12.7332C92.441 12.4998 91.8719 12.5537 91.4654 12.8876C91.0554 13.218 90.8539 13.7782 90.8539 14.5538V45.9703C90.8539 46.7495 91.0589 47.4246 91.4654 48.0027C91.8719 48.5808 92.441 48.9794 93.1692 49.2128C93.9397 49.4606 94.5265 49.4283 94.9295 49.1123C95.3324 48.7963 95.5375 48.2505 95.5375 47.4712V38.1242C96.8771 38.591 98.2097 39.0866 99.5317 39.6108V48.8286C99.5317 50.9077 98.998 52.2794 97.9199 52.976C96.8418 53.6727 95.2653 53.6475 93.1692 52.976C91.1155 52.3189 89.5284 51.3314 88.4255 49.9346C87.3227 48.5413 86.7677 46.8177 86.7677 44.7386V13.5807C86.7677 11.5051 87.3227 10.0472 88.4255 9.23571C89.5284 8.42776 91.1155 8.31285 93.1692 8.96639C95.2653 9.63788 96.8453 10.769 97.9199 12.2772C98.9944 13.7889 99.5317 15.5951 99.5317 17.6706V28.77Z" fill="white"/>
+                            <path d="M60.5292 33.7182C62.2401 33.6715 63.9509 33.6715 65.6617 33.7182C64.8063 24.6476 63.9509 15.5879 63.0955 6.54248C62.2401 15.5915 61.3846 24.6512 60.5292 33.7217V33.7182Z" fill="white"/>
+                            </g>
+                            <defs>
+                            <clipPath id="clip0_86_699">
+                            <rect width="126" height="64" fill="white"/>
+                            </clipPath>
+                            </defs>
+                        </svg>
+                        <span class="font-loud text-3xl font-bold tracking-widest text-radar-green">RADAR</span>
+                    </div>
+                    <div class="text-[10px] text-radar-green tracking-[0.3em] uppercase opacity-80 flex items-center gap-2">
+                        <span id="feed-status">LIVE INTEL</span>
+                        <span class="w-1 h-1 bg-radar-green rounded-full animate-pulse"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <!-- Zulu Time Clock -->
+                <div class="hidden md:block text-right">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Zulu Time</div>
+                    <div id="zulu-clock" class="text-white font-tech text-lg leading-none">00:00:00</div>
+                </div>
+
+                <!-- Refresh Button -->
+                <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                    <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
+                    <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
+                        <i class="fas fa-sync-alt" id="scan-icon"></i>
+                        Scan
+                    </span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
+        
+        <!-- Left Column: Radar Visual & Filters -->
+        <aside class="lg:col-span-4 flex flex-col gap-6">
+            
+            <!-- Radar Visualization Panel -->
+            <div id="radar-panel" class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
+                <div class="absolute top-2 left-2 text-xs text-radar-greenDim">SYS.MONITORING</div>
+                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE</div>
+                
+                <!-- The Radar Circle -->
+                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(255,255,255,0.1)]" id="radar-circle">
+                    <!-- Grid Rings -->
+                    <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75"></div>
+                    <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50"></div>
+                    <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-25"></div>
+                    
+                    <!-- Crosshairs -->
+                    <div class="absolute top-1/2 left-0 w-full h-[1px] bg-radar-greenDim"></div>
+                    <div class="absolute left-1/2 top-0 h-full w-[1px] bg-radar-greenDim"></div>
+
+                    <!-- The Sweep -->
+                    <div class="absolute inset-0 radar-sweep animate-spin-slow origin-center"></div>
+                    
+                    <!-- Dynamic Blips Container -->
+                    <div id="blips-container"></div>
+                </div>
+
+                <div class="text-center font-loud text-2xl tracking-widest text-radar-green mt-2">
+                    <span id="target-count">000</span> TARGETS ACQUIRED
+                </div>
+
+                <!-- Legend -->
+                <div class="mt-4 pt-3 border-t border-radar-grid text-[10px] text-gray-600 space-y-1">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 border border-radar-green bg-radar-green/20"></span>
+                        <span>ACTIVE = Has active promo code</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 border border-radar-red bg-radar-red/20 animate-pulse"></span>
+                        <span>PULSE = New code just detected</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats HUD -->
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Promos</div>
+                    <div class="font-loud text-3xl text-white" id="stat-promos">0</div>
+                </div>
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Codes</div>
+                    <div class="font-loud text-3xl text-radar-green" id="stat-codes">0</div>
+                </div>
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</div>
+                    <div class="font-loud text-3xl text-radar-orange" id="stat-email">0</div>
+                </div>
+            </div>
+
+            <!-- Search -->
+            <div class="relative">
+                <input type="text" id="search-input" placeholder="SEARCH TARGETS..." 
+                    class="w-full bg-radar-dark border border-radar-grid px-4 py-3 text-white placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors"
+                    oninput="handleSearch(this.value)">
+                <i class="fas fa-search absolute right-4 top-1/2 -translate-y-1/2 text-gray-600"></i>
+            </div>
+
+            <!-- Categories -->
+            <div class="bg-radar-dark border border-radar-grid p-4 rounded-sm">
+                <h3 class="font-loud text-xl text-white mb-4 border-b border-radar-grid pb-2">FILTER PROTOCOL</h3>
+                <div class="space-y-2" id="filter-buttons">
+                    <button data-filter="all" class="filter-btn w-full text-left px-4 py-2 bg-radar-green/10 text-radar-green border-l-2 border-radar-green hover:bg-radar-green/20 transition-all font-bold">
+                        <i class="fas fa-globe-americas w-6"></i> ALL SECTORS
+                    </button>
+                    <button data-filter="apparel" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-tshirt w-6"></i> APPAREL
+                    </button>
+                    <button data-filter="footwear" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-shoe-prints w-6"></i> FOOTWEAR
+                    </button>
+                    <button data-filter="retailer" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-shopping-bag w-6"></i> RETAILERS
+                    </button>
+                    <button data-filter="oem" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-golf-ball w-6"></i> OEM HARDWARE
+                    </button>
+                    <button data-filter="bags" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-suitcase w-6"></i> BAGS & ACCESSORIES
+                    </button>
+                    <button data-filter="womens" class="filter-btn w-full text-left px-4 py-2 hover:bg-radar-green/5 text-gray-400 hover:text-white border-l-2 border-transparent hover:border-radar-green transition-all">
+                        <i class="fas fa-venus w-6"></i> WOMEN'S
+                    </button>
+                </div>
+            </div>
+
+            <!-- System Log -->
+            <div class="font-tech text-[10px] text-gray-600 space-y-1 h-32 overflow-hidden border-t border-radar-grid pt-2 opacity-50" id="system-log">
+                <div>> INITIATING SEQUENCE... OK</div>
+                <div>> CONNECTING TO SERVER... OK</div>
+                <div>> AWAITING DATA STREAM...</div>
+            </div>
+        </aside>
+
+        <!-- Right Column: Deal Feed -->
+        <section class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- Feed Header -->
+            <div class="flex justify-between items-end border-b-2 border-radar-green pb-2 mb-2">
+                <h2 class="font-loud text-4xl text-white">INCOMING TRANSMISSIONS</h2>
+                <div class="flex gap-4 items-center">
+                    <span class="text-xs text-radar-green animate-pulse" id="last-update">AWAITING SIGNAL...</span>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-2 flex-wrap">
+                <button onclick="switchTab('promos')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-radar-green text-radar-green" data-tab="promos">
+                    PROMOS
+                </button>
+                <button onclick="switchTab('codes')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="codes">
+                    CODES
+                </button>
+                <button onclick="switchTab('clearance')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="clearance">
+                    CLEARANCE
+                </button>
+                <button onclick="switchTab('impact')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="impact">
+                    <i class="fas fa-handshake mr-1"></i>PARTNER DEALS
+                </button>
+                <button onclick="switchTab('email')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="email">
+                    EMAIL OFFERS
+                </button>
+            </div>
+
+            <!-- Featured Deal (Critical Hit) - Will be populated dynamically -->
+            <div id="featured-deal" class="hidden"></div>
+
+            <!-- Tactical Nukes Section - Dynamic from Impact -->
+            <div id="tactical-nukes-section" class="mb-8 hidden">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 bg-radar-red rounded-sm flex items-center justify-center">
+                        <i class="fas fa-radiation text-black"></i>
+                    </div>
+                    <h3 class="font-loud text-2xl text-white tracking-wider">TACTICAL NUKES</h3>
+                    <div class="flex-1 h-px bg-radar-grid"></div>
+                    <span class="text-gray-600 text-xs font-tech">EDITOR'S PICKS</span>
+                </div>
+                
+                <div id="tactical-nukes-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <!-- Products populated by JS -->
+                </div>
+                
+                <button id="tactical-nukes-toggle" onclick="toggleTacticalNukes()" class="hidden w-full mt-3 py-2 border border-radar-grid text-gray-500 hover:text-radar-green hover:border-radar-green transition-colors font-tech text-sm">
+                    <i class="fas fa-chevron-down mr-2"></i>VIEW ALL
+                </button>
+            </div>
+
+            <!-- Deals Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
+                <!-- Loading state -->
+                <div class="col-span-2 text-center py-20 text-gray-600">
+                    <i class="fas fa-satellite-dish text-4xl mb-4 animate-pulse"></i>
+                    <div class="font-loud text-2xl">SCANNING FREQUENCIES...</div>
+                </div>
+            </div>
+
+            <!-- Loader / Scanner Line -->
+            <div class="w-full h-1 bg-gray-900 mt-4 overflow-hidden rounded-full">
+                <div class="h-full bg-radar-green w-1/3 animate-[scan_2s_ease-in-out_infinite]"></div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Intel Feed Sidebar - Collapsible -->
+    <div id="intel-sidebar" class="fixed top-0 right-0 h-full w-80 bg-radar-black border-l border-radar-grid transform translate-x-full transition-transform duration-300 z-50 flex flex-col">
+        <!-- Header -->
+        <div class="p-4 border-b border-radar-grid flex items-center justify-between">
+            <h3 class="font-loud text-lg text-white tracking-wider">
+                <i class="fas fa-satellite-dish text-radar-green mr-2"></i>INTEL FEED
+            </h3>
+            <button onclick="toggleIntelFeed()" class="text-gray-500 hover:text-white transition-colors">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        
+        <!-- Articles -->
+        <div id="articles-list" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <!-- Articles populated by JS -->
+        </div>
+        
+        <!-- Footer -->
+        <div class="p-3 border-t border-radar-grid text-center">
+            <span class="text-gray-600 text-xs font-tech">FROM THE NETWORK</span>
+        </div>
+    </div>
+    
+    <!-- Intel Feed Toggle Button -->
+    <button id="intel-toggle" onclick="toggleIntelFeed()" 
+            class="fixed right-0 top-1/2 -translate-y-1/2 bg-radar-dark border border-radar-grid border-r-0 rounded-l-lg px-2 py-4 z-40 hover:bg-radar-green hover:text-black transition-all group hidden">
+        <div class="flex flex-col items-center gap-2">
+            <i class="fas fa-newspaper text-radar-green group-hover:text-black"></i>
+            <span class="font-loud text-xs tracking-widest writing-vertical text-white group-hover:text-black">INTEL</span>
+            <span id="intel-count" class="bg-radar-green text-black text-xs font-bold px-1.5 py-0.5 rounded">0</span>
+        </div>
+    </button>
+
+    <!-- Intel Marquee - Fixed at bottom -->
+    <div class="fixed bottom-0 left-0 right-0 bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black z-[60]">
+        <div class="marquee-track flex" id="marquee-track">
+            <div class="marquee-content flex-shrink-0 px-4" id="marquee-text">
+                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+            </div>
+            <div class="marquee-content flex-shrink-0 px-4" id="marquee-text-2">
+                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-radar-black py-8 pb-16 relative z-10">
+        <div class="container mx-auto px-4 text-center">
+            <div class="font-loud text-2xl text-white mb-2 tracking-widest">
+                GOLF PROMO <span class="text-radar-green">RADAR</span>
+            </div>
+            <p class="text-gray-600 text-xs font-tech uppercase tracking-widest">
+                Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // =================================================================
+        // STATE
+        // =================================================================
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNukes: [], articles: [] };
+        let currentFilter = 'all';
+        let currentTab = 'promos';
+        let searchQuery = '';
+        let seenDeals = JSON.parse(localStorage.getItem('seenDeals') || '{}');
+        let transmissionQueue = [];
+        let isShowingTransmission = false;
+
+        // =================================================================
+        // INCOMING TRANSMISSION SYSTEM
+        // =================================================================
+        function getDealKey(deal) {
+            return `${deal.brand}-${deal.promo || deal.code || deal.offer || ''}`.toLowerCase().replace(/\s+/g, '-');
+        }
+
+        function checkForNewDeals(data) {
+            const newDeals = [];
+            
+            // Check promos with codes (most exciting)
+            (data.codes || []).forEach(c => {
+                const key = getDealKey({ brand: c.brand, promo: c.code });
+                if (!seenDeals[key]) {
+                    seenDeals[key] = Date.now();
+                    newDeals.push({
+                        brand: c.brand,
+                        detail: `CODE: ${c.code}`,
+                        type: 'code'
+                    });
+                }
+            });
+            
+            // Check high-value promos (40%+ off)
+            (data.promos || []).filter(p => p.promo).forEach(p => {
+                const key = getDealKey(p);
+                const discount = p.promo?.match(/(\d+)%/)?.[1];
+                if (!seenDeals[key] && discount && parseInt(discount) >= 40) {
+                    seenDeals[key] = Date.now();
+                    newDeals.push({
+                        brand: p.brand,
+                        detail: p.promo,
+                        type: 'promo'
+                    });
+                }
+            });
+            
+            // Save seen deals (keep last 500)
+            const keys = Object.keys(seenDeals);
+            if (keys.length > 500) {
+                const sorted = keys.sort((a, b) => seenDeals[a] - seenDeals[b]);
+                sorted.slice(0, keys.length - 500).forEach(k => delete seenDeals[k]);
+            }
+            localStorage.setItem('seenDeals', JSON.stringify(seenDeals));
+            
+            return newDeals;
+        }
+
+        function showTransmission(deal) {
+            const popup = document.getElementById('transmission-popup');
+            document.getElementById('transmission-brand').textContent = deal.brand.toUpperCase();
+            document.getElementById('transmission-detail').textContent = deal.detail;
+            
+            // Red flash effect
+            const flash = document.createElement('div');
+            flash.className = 'fixed inset-0 bg-radar-red/10 z-[99] pointer-events-none';
+            document.body.appendChild(flash);
+            setTimeout(() => flash.remove(), 200);
+            
+            // Show popup
+            popup.classList.remove('opacity-0', '-translate-y-10', 'pointer-events-none');
+            popup.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+            isShowingTransmission = true;
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                dismissTransmission();
+            }, 5000);
+        }
+
+        function dismissTransmission() {
+            const popup = document.getElementById('transmission-popup');
+            popup.classList.add('opacity-0', '-translate-y-10', 'pointer-events-none');
+            popup.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+            isShowingTransmission = false;
+            
+            // Show next in queue after a short delay
+            setTimeout(() => {
+                if (transmissionQueue.length > 0 && !isShowingTransmission) {
+                    showTransmission(transmissionQueue.shift());
+                }
+            }, 800);
+        }
+
+        function queueTransmissions(newDeals) {
+            if (newDeals.length === 0) return;
+            
+            // Add to queue
+            transmissionQueue.push(...newDeals);
+            
+            // Start showing if not already
+            if (!isShowingTransmission) {
+                showTransmission(transmissionQueue.shift());
+            }
+            
+            // Log it
+            log(`⚡ NEW TRANSMISSION: ${newDeals.length} deal(s) detected`);
+        }
+
+        // =================================================================
+        // ZULU CLOCK
+        // =================================================================
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toISOString().substr(11, 8);
+            document.getElementById('zulu-clock').innerText = timeString;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // =================================================================
+        // SYSTEM LOG
+        // =================================================================
+        function log(message) {
+            const logEl = document.getElementById('system-log');
+            const entry = document.createElement('div');
+            entry.textContent = `> ${message}`;
+            entry.className = message.includes('ERROR') ? 'text-radar-red' : 
+                             message.includes('OK') || message.includes('FOUND') ? 'text-radar-green' : '';
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // =================================================================
+        // FETCH DATA
+        // =================================================================
+        async function fetchData(isInitialLoad = false) {
+            try {
+                log('FETCHING BRAND DATA...');
+                const response = await fetch('/api/promos');
+                const data = await response.json();
+                
+                // Check for new deals (skip on initial page load)
+                if (!isInitialLoad) {
+                    const newDeals = checkForNewDeals(data);
+                    if (newDeals.length > 0) {
+                        queueTransmissions(newDeals);
+                    }
+                } else {
+                    // On initial load, just mark all current deals as seen
+                    (data.codes || []).forEach(c => {
+                        seenDeals[getDealKey({ brand: c.brand, promo: c.code })] = Date.now();
+                    });
+                    (data.promos || []).filter(p => p.promo).forEach(p => {
+                        seenDeals[getDealKey(p)] = Date.now();
+                    });
+                    localStorage.setItem('seenDeals', JSON.stringify(seenDeals));
+                }
+                
+                promoData = data;
+                
+                log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
+                log(`CODES EXTRACTED: ${data.codes?.length || 0}`);
+                log(`CLEARANCE ITEMS: ${data.clearance?.length || 0}`);
+                log(`PARTNER DEALS: ${data.impactDeals?.length || 0}`);
+                log(`EMAIL OFFERS: ${data.emailOffers?.length || 0}`);
+                
+                updateUI();
+                updateBlips();
+                updateMarquee();
+                
+                document.getElementById('feed-status').textContent = 'LIVE INTEL';
+                document.getElementById('feed-status').classList.remove('text-radar-red');
+                document.getElementById('feed-status').classList.add('text-radar-green');
+                
+                if (data.lastUpdated) {
+                    const date = new Date(data.lastUpdated);
+                    document.getElementById('last-update').textContent = `UPDATED ${date.toLocaleTimeString()}`;
+                }
+            } catch (error) {
+                console.error('Failed to fetch:', error);
+                log('ERROR: SIGNAL LOST');
+                document.getElementById('feed-status').textContent = 'CONNECTION ERROR';
+                document.getElementById('feed-status').classList.remove('text-radar-green');
+                document.getElementById('feed-status').classList.add('text-radar-red');
+            }
+        }
+
+        // =================================================================
+        // UPDATE UI
+        // =================================================================
+        function updateUI() {
+            // Stats
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            const codes = promoData.codes || [];
+            const emails = promoData.emailOffers || [];
+            const clearance = promoData.clearance || [];
+            
+            document.getElementById('stat-promos').textContent = promos.length;
+            document.getElementById('stat-codes').textContent = codes.length;
+            document.getElementById('stat-email').textContent = emails.length;
+            document.getElementById('target-count').textContent = promos.length.toString().padStart(3, '0');
+
+            // Render current tab
+            if (currentTab === 'promos') renderPromos();
+            else if (currentTab === 'codes') renderCodes();
+            else if (currentTab === 'clearance') renderClearance();
+            else if (currentTab === 'impact') renderImpactDeals();
+            else if (currentTab === 'email') renderEmail();
+            
+            // Always render articles
+            renderArticles();
+        }
+
+        // =================================================================
+        // RENDER PROMOS
+        // =================================================================
+        function renderPromos() {
+            const grid = document.getElementById('deals-grid');
+            const featured = document.getElementById('featured-deal');
+            
+            let promos = promoData.promos?.filter(p => p.promo) || [];
+            
+            // Filter
+            if (currentFilter !== 'all') {
+                promos = promos.filter(p => p.category === currentFilter || p.tags?.includes(currentFilter));
+            }
+            
+            // Search
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                promos = promos.filter(p => 
+                    p.brand?.toLowerCase().includes(q) ||
+                    p.promo?.toLowerCase().includes(q) ||
+                    p.code?.toLowerCase().includes(q) ||
+                    p.tags?.some(t => t.toLowerCase().includes(q))
+                );
+            }
+
+            // Sort: NEW first, then by discount percentage
+            promos.sort((a, b) => {
+                // New deals first
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                
+                // Then by discount
+                const getDiscount = (p) => {
+                    const match = p.promo?.match(/(\d+)%/);
+                    return match ? parseInt(match[1]) : 0;
+                };
+                return getDiscount(b) - getDiscount(a);
+            });
+
+            // Featured - Critical Hit (40%+ off promos, rotating)
+            if (!searchQuery && promos.length > 0) {
+                const criticalHits = promos.filter(p => {
+                    const discount = p.promo?.match(/(\d+)%/)?.[1];
+                    return discount && parseInt(discount) >= 40;
+                });
+                
+                if (criticalHits.length > 0) {
+                    const rotationIndex = (promoData.criticalHitIndex || 0) % criticalHits.length;
+                    const top = criticalHits[rotationIndex];
+                    const discount = top.promo?.match(/(\d+)%/)?.[1] || 0;
+                    
+                    const rawUrl = top.affiliate_url || top.url;
+                    const linkUrl = trackUrl(rawUrl, top.brand, 'critical-hit');
+                    const hasLogo = top.image && !top.image.includes('data:');
+                    featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
+                    featured.innerHTML = `
+                        <div class="target-corner tl border-radar-red"></div>
+                        <div class="target-corner tr border-radar-red"></div>
+                        <div class="target-corner bl border-radar-red"></div>
+                        <div class="target-corner br border-radar-red"></div>
+                        <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
+                        <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
+                            <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
+                                ${hasLogo 
+                                    ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
+                                    : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
+                                }
+                            </div>
+                            <div class="flex-grow">
+                                <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
+                                <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${discount}% OFF</span>
+                                    ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
+                                </div>
+                            </div>
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
+                                ACCESS
+                            </a>
+                        </div>
+                    `;
+                    // Remove the featured item from the grid
+                    promos = promos.filter(p => p.brand !== top.brand || p.promo !== top.promo);
+                } else {
+                    featured.className = 'hidden';
+                    featured.innerHTML = '';
+                }
+            } else {
+                featured.className = 'hidden';
+                featured.innerHTML = '';
+            }
+            
+            // Render Tactical Nukes section
+            renderTacticalNukes();
+
+            // Grid
+            if (promos.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-radar text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO SIGNALS DETECTED</div>
+                        <div class="text-sm mt-2">Try adjusting your filters</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = promos.map(p => {
+                const discount = p.promo?.match(/(\d+)%/)?.[1] || 0;
+                const isHot = discount >= 30;
+                const isNew = p.is_new;
+                const isStale = p.is_stale;
+                const icon = getCategoryIcon(p.category);
+                const rawUrl = p.affiliate_url || p.url;
+                const linkUrl = trackUrl(rawUrl, p.brand, 'promos');
+                const hasLogo = p.image && !p.image.includes('data:');
+                
+                // Badge logic: NEW > HOT > ALWAYS ON
+                let badge = '';
+                if (isNew) {
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
+                } else if (isHot) {
+                    badge = '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>';
+                } else if (isStale) {
+                    badge = '<span class="text-gray-500 text-xs border border-gray-600 px-1">ONGOING</span>';
+                }
+                
+                // Expiration indicator
+                let expiresText = '';
+                if (p.expires) {
+                    try {
+                        const expDate = new Date(p.expires);
+                        const now = new Date();
+                        const hoursLeft = (expDate - now) / (1000 * 60 * 60);
+                        if (hoursLeft > 0 && hoursLeft < 48) {
+                            expiresText = `<span class="text-radar-red text-[10px] ml-2"><i class="fas fa-clock mr-1"></i>ENDS SOON</span>`;
+                        }
+                    } catch (e) {}
+                }
+                
+                // First seen timestamp
+                const firstSeenText = p.first_seen ? formatFirstSeen(p.first_seen) : '';
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
+                        
+                        <div class="p-5">
+                            <div class="flex justify-between items-start mb-4 relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-white rounded-sm flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                        ${hasLogo 
+                                            ? `<img src="${p.image}" alt="${p.brand}" class="w-full h-full object-contain p-1" onerror="this.parentElement.innerHTML='<i class=\\'fas ${icon} text-black\\'></i>'">`
+                                            : `<i class="fas ${icon} text-black"></i>`
+                                        }
+                                    </div>
+                                    <div>
+                                        <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
+                                        <span class="text-xs text-gray-500">${p.category?.toUpperCase() || 'MISC'}${expiresText}${firstSeenText ? ` <span class="text-gray-600">• ${firstSeenText}</span>` : ''}</span>
+                                    </div>
+                                </div>
+                                ${badge}
+                            </div>
+                            
+                            <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
+                            ${p.email_offer ? `<p class="text-radar-orange text-xs mb-3 relative z-10"><i class="fas fa-envelope mr-1"></i>Email signup: ${p.email_offer}</p>` : ''}
+                            
+                            <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
+                                ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-tech" onclick="event.preventDefault(); event.stopPropagation(); copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
+                                <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                    View <i class="fas fa-chevron-right text-xs"></i>
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Hover overlay removed for cleaner look -->
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER CODES
+        // =================================================================
+        function renderCodes() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let codes = promoData.codes || [];
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                codes = codes.filter(c => 
+                    c.brand?.toLowerCase().includes(q) ||
+                    c.code?.toLowerCase().includes(q)
+                );
+            }
+
+            if (codes.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-key text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO CODES INTERCEPTED</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = codes.map(c => {
+                const rawUrl = c.affiliate_url || c.url || '#';
+                const linkUrl = trackUrl(rawUrl, c.brand, 'codes');
+                const isNew = c.is_new;
+                const firstSeenText = c.first_seen ? formatFirstSeen(c.first_seen) : '';
+                return `
+                <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
+                    ${isNew ? '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>' : ''}
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="font-loud text-xl text-white hover:text-radar-green transition-colors">${c.brand} <i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i></a>
+                            <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}${firstSeenText ? ` • ${firstSeenText}` : ''}</p>
+                        </div>
+                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-tech text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
+                            ${c.code}
+                        </div>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        // =================================================================
+        // RENDER CLEARANCE
+        // =================================================================
+        function renderClearance() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let items = promoData.clearance || [];
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                items = items.filter(c => c.category === currentFilter);
+            }
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                items = items.filter(c => 
+                    c.brand?.toLowerCase().includes(q) ||
+                    c.promo?.toLowerCase().includes(q)
+                );
+            }
+            
+            // Sort: NEW first, then by discount percentage (highest first)
+            items.sort((a, b) => {
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return (b.discount || 0) - (a.discount || 0);
+            });
+
+            if (items.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-tags text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO CLEARANCE ITEMS DETECTED</div>
+                        <div class="text-sm mt-2">Sale pages are scanned every 10 minutes</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = items.map(c => {
+                const rawUrl = c.affiliate_url || c.url;
+                const linkUrl = trackUrl(rawUrl, c.brand, 'clearance');
+                const discount = c.discount;
+                const icon = getCategoryIcon(c.category);
+                const isNew = c.is_new;
+                
+                // Badge logic
+                let badge = '';
+                if (isNew) {
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
+                } else if (discount) {
+                    badge = `<span class="text-radar-orange text-xs border border-radar-orange px-1">${discount}% OFF</span>`;
+                }
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-orange transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : ''}">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
+                        
+                        <div class="p-5">
+                            <div class="flex justify-between items-start mb-4 relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-radar-orange/20 rounded-sm flex items-center justify-center flex-shrink-0">
+                                        <i class="fas fa-tags text-radar-orange"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-loud text-2xl text-white leading-none">${c.brand}</h4>
+                                        <span class="text-xs text-gray-500">${c.category?.toUpperCase() || 'SALE'}</span>
+                                    </div>
+                                </div>
+                                ${badge}
+                            </div>
+                            
+                            <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${c.promo}</p>
+                            
+                            <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
+                                <span class="text-radar-orange font-bold text-sm">CLEARANCE${discount && !isNew ? ` • ${discount}% OFF` : ''}</span>
+                                <span class="text-white group-hover:text-radar-orange font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                    Shop <i class="fas fa-chevron-right text-xs"></i>
+                                </span>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER IMPACT/PARTNER DEALS
+        // =================================================================
+        function renderImpactDeals() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let deals = promoData.impactDeals || [];
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                const categoryMap = {
+                    'apparel': ['mizzen', 'travis', 'malbon', 'sunday', 'sounder', 'j.lindeberg'],
+                    'footwear': ['duca'],
+                    'equipment': ['taylormade', 'wilson', 'stewart', 'rapsodo', 'sun mountain'],
+                    'accessories': ['stitch', 'boston scally', 'seamus'],
+                };
+                const keywords = categoryMap[currentFilter] || [];
+                if (keywords.length > 0) {
+                    deals = deals.filter(d => {
+                        const brandLower = d.brand?.toLowerCase() || '';
+                        return keywords.some(k => brandLower.includes(k));
+                    });
+                }
+            }
+            
+            // Search filter
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                deals = deals.filter(d => 
+                    d.brand?.toLowerCase().includes(q) ||
+                    d.promo?.toLowerCase().includes(q)
+                );
+            }
+            
+            // Sort: NEW first, then by discount (highest first)
+            deals.sort((a, b) => {
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return (b.discount || 0) - (a.discount || 0);
+            });
+            
+            // Limit to 3 deals per brand
+            const brandCounts = {};
+            deals = deals.filter(d => {
+                const brand = d.brand?.toLowerCase() || 'unknown';
+                brandCounts[brand] = (brandCounts[brand] || 0) + 1;
+                return brandCounts[brand] <= 3;
+            });
+
+            if (deals.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-handshake text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO PARTNER DEALS AVAILABLE</div>
+                        <div class="text-sm mt-2">Partner deals are pulled from Impact Radius</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = deals.map(d => {
+                const rawUrl = d.affiliate_url || '#';
+                const linkUrl = trackUrl(rawUrl, d.brand, 'partner-deals');
+                const discount = d.discount || 0;
+                const isNew = d.is_new;
+                const isStale = d.is_stale;
+                
+                // Badge logic
+                let badge = '';
+                if (isNew) {
+                    badge = '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>';
+                } else if (discount >= 30) {
+                    badge = '<div class="absolute top-0 right-0 bg-radar-red text-white text-[10px] font-bold px-2 py-1 animate-pulse">HOT</div>';
+                } else if (isStale) {
+                    badge = '<div class="absolute top-0 right-0 bg-gray-700 text-gray-400 text-[10px] font-bold px-2 py-1">ONGOING</div>';
+                }
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
+                        ${badge}
+                        <div class="flex items-start gap-4">
+                            <div class="w-10 h-10 bg-white rounded flex items-center justify-center flex-shrink-0 p-1">
+                                <i class="fas fa-tag text-radar-dark"></i>
+                            </div>
+                            <div class="flex-grow min-w-0">
+                                <h4 class="text-white font-bold text-lg truncate relative z-10">${d.brand}</h4>
+                                <p class="text-gray-400 text-sm mt-1 line-clamp-2">${d.promo}</p>
+                                <div class="flex items-center justify-between mt-3">
+                                    ${discount ? `<span class="text-xs font-bold bg-radar-green text-black px-2 py-0.5">${discount}% OFF</span>` : '<span></span>'}
+                                    <span class="text-radar-green text-sm font-bold group-hover:underline">Shop <i class="fas fa-chevron-right text-xs ml-1"></i></span>
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER EMAIL OFFERS
+        // =================================================================
+        function renderEmail() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let offers = promoData.emailOffers || [];
+            
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                offers = offers.filter(o => 
+                    o.brand?.toLowerCase().includes(q) ||
+                    o.offer?.toLowerCase().includes(q)
+                );
+            }
+
+            if (offers.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-envelope text-4xl mb-4"></i>
+                        <div class="font-loud text-2xl">NO EMAIL OFFERS DETECTED</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = offers.map(o => {
+                const linkUrl = o.affiliate_url || o.url || '#';
+                return `
+                <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 block">
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 bg-radar-orange/20 rounded-full flex items-center justify-center">
+                            <i class="fas fa-envelope text-radar-orange"></i>
+                        </div>
+                        <div class="flex-grow">
+                            <h4 class="font-loud text-xl text-white">${o.brand}</h4>
+                            <p class="text-gray-400 text-sm">${o.offer}</p>
+                        </div>
+                        <span class="text-radar-green text-sm font-bold group-hover:underline">Visit <i class="fas fa-chevron-right text-xs ml-1"></i></span>
+                    </div>
+                </a>
+            `}).join('');
+        }
+
+        // =================================================================
+        // RENDER TACTICAL NUKES (Editor-curated)
+        // =================================================================
+        let tacticalNukesExpanded = false;
+        
+        function renderTacticalNukes() {
+            const section = document.getElementById('tactical-nukes-section');
+            const grid = document.getElementById('tactical-nukes-grid');
+            const toggleBtn = document.getElementById('tactical-nukes-toggle');
+            
+            const allNukes = promoData.tacticalNukes || [];
+            
+            if (allNukes.length === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+            
+            section.classList.remove('hidden');
+            
+            // Show 4 initially, or all if expanded
+            const nukes = tacticalNukesExpanded ? allNukes : allNukes.slice(0, 4);
+            
+            // Show/hide toggle button
+            if (allNukes.length > 4) {
+                toggleBtn.classList.remove('hidden');
+                toggleBtn.innerHTML = tacticalNukesExpanded 
+                    ? '<i class="fas fa-chevron-up mr-2"></i>SHOW LESS'
+                    : `<i class="fas fa-chevron-down mr-2"></i>VIEW ALL (${allNukes.length})`;
+            } else {
+                toggleBtn.classList.add('hidden');
+            }
+            
+            grid.innerHTML = nukes.map(p => {
+                const hasDiscount = p.original_price && p.sale_price && p.sale_price < p.original_price;
+                
+                // Badge colors
+                const badgeColors = {
+                    'COLLAB': 'bg-radar-orange text-black',
+                    'VALUE': 'bg-radar-green text-black',
+                    'NEW': 'bg-blue-600 text-white',
+                    "EDITOR'S PICK": 'bg-purple-600 text-white',
+                    'HOT': 'bg-radar-red text-black'
+                };
+                const badgeClass = badgeColors[p.badge] || 'bg-radar-green text-black';
+                const badgeHtml = p.badge ? `<div class="absolute top-2 left-2 ${badgeClass} text-[10px] font-bold px-1.5 py-0.5">${p.badge}</div>` : '';
+                
+                const priceDisplay = hasDiscount
+                    ? `<div>
+                            <span class="text-gray-500 line-through text-xs mr-1">$${p.original_price}</span>
+                            <span class="text-radar-green font-bold">$${p.sale_price}</span>
+                       </div>`
+                    : `<span class="text-radar-green font-bold">$${p.sale_price || p.original_price || ''}</span>`;
+                
+                const reviewLink = p.review_url 
+                    ? `<a href="${p.review_url}" target="_blank" rel="noopener" class="absolute top-2 right-2 bg-black/70 text-radar-green text-[10px] font-bold px-1.5 py-0.5 hover:bg-radar-green hover:text-black transition-colors" onclick="event.stopPropagation()">READ REVIEW</a>`
+                    : '';
+                
+                const trackedUrl = trackUrl(p.affiliate_url, p.brand || p.name, 'tactical-nukes');
+                return `
+                <a href="${trackedUrl}" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
+                    <div class="aspect-square bg-gray-900 relative overflow-hidden">
+                        <img src="${p.image_url}" alt="${p.name}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23111%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23333%22 font-size=%2240%22>?</text></svg>'">
+                        ${badgeHtml}
+                        ${reviewLink}
+                    </div>
+                    <div class="p-3">
+                        <div class="text-[10px] text-radar-green uppercase tracking-wider mb-1">${p.brand || 'Partner'}</div>
+                        <div class="text-white text-sm font-loud leading-tight mb-2 line-clamp-2">${p.name}</div>
+                        <div class="flex justify-between items-center">
+                            ${priceDisplay}
+                            <i class="fas fa-arrow-right text-xs text-gray-600 group-hover:text-radar-green group-hover:translate-x-1 transition-all"></i>
+                        </div>
+                    </div>
+                </a>
+            `}).join('');
+        }
+        
+        function toggleTacticalNukes() {
+            tacticalNukesExpanded = !tacticalNukesExpanded;
+            renderTacticalNukes();
+        }
+
+        // =================================================================
+        // RENDER ARTICLES (Sidebar)
+        // =================================================================
+        function renderArticles() {
+            const toggle = document.getElementById('intel-toggle');
+            const list = document.getElementById('articles-list');
+            const count = document.getElementById('intel-count');
+            
+            const articles = promoData.articles || [];
+            
+            if (articles.length === 0) {
+                toggle.classList.add('hidden');
+                return;
+            }
+            
+            toggle.classList.remove('hidden');
+            count.textContent = articles.length;
+            
+            list.innerHTML = articles.map(a => {
+                const sourceColor = a.source === 'GolfWRX' ? 'text-blue-400' : 'text-radar-green';
+                const sourceBg = a.source === 'GolfWRX' ? 'bg-blue-400/10 border-blue-400/30' : 'bg-radar-green/10 border-radar-green/30';
+                
+                return `
+                <a href="${a.url}" target="_blank" rel="noopener" 
+                   class="block bg-radar-dark border border-radar-grid rounded-lg overflow-hidden hover:border-radar-green transition-colors group">
+                    ${a.image ? `
+                        <div class="h-28 bg-gray-900 overflow-hidden">
+                            <img src="${a.image}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.parentElement.innerHTML='<div class=\\'flex items-center justify-center h-full text-gray-700\\'><i class=\\'fas fa-newspaper text-2xl\\'></i></div>'">
+                        </div>
+                    ` : ''}
+                    <div class="p-3">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="${sourceColor} ${sourceBg} border text-[10px] font-bold px-1.5 py-0.5 rounded">${a.source === 'GolfWRX' ? 'WRX' : 'SKRATCH'}</span>
+                            <span class="text-gray-600 text-[10px]">${a.category || 'News'}</span>
+                        </div>
+                        <h4 class="text-white text-sm font-semibold leading-tight line-clamp-2 group-hover:text-radar-green transition-colors">
+                            ${a.title}
+                        </h4>
+                        ${a.preview ? `<p class="text-gray-500 text-xs mt-1 line-clamp-2">${a.preview}</p>` : ''}
+                    </div>
+                </a>
+            `}).join('');
+        }
+        
+        function toggleIntelFeed() {
+            const sidebar = document.getElementById('intel-sidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        // =================================================================
+        // HELPERS
+        // =================================================================
+        function trackUrl(url, brand, source = 'radar') {
+            if (!url) return '#';
+            return `/go?url=${encodeURIComponent(url)}&brand=${encodeURIComponent(brand)}&source=${source}`;
+        }
+        
+        function formatFirstSeen(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const date = new Date(dateStr);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffHours / 24);
+                
+                if (diffHours < 1) return 'Just now';
+                if (diffHours < 24) return `${diffHours}h ago`;
+                if (diffDays === 1) return 'Yesterday';
+                if (diffDays < 7) return `${diffDays}d ago`;
+                if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+                
+                // Show actual date for older deals
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            } catch (e) {
+                return '';
+            }
+        }
+        
+        function getCategoryIcon(category) {
+            const icons = {
+                apparel: 'fa-tshirt',
+                footwear: 'fa-shoe-prints',
+                oem: 'fa-golf-ball',
+                retailer: 'fa-shopping-bag',
+                bags: 'fa-suitcase',
+                accessories: 'fa-hat-cowboy',
+                womens: 'fa-venus'
+            };
+            return icons[category] || 'fa-tag';
+        }
+
+        function copyCode(code, el) {
+            navigator.clipboard.writeText(code);
+            el.classList.add('copied');
+            const original = el.innerHTML;
+            el.innerHTML = '<i class="fas fa-check"></i> COPIED';
+            setTimeout(() => {
+                el.classList.remove('copied');
+                el.innerHTML = original;
+            }, 2000);
+        }
+
+        function handleSearch(value) {
+            searchQuery = value;
+            updateUI();
+        }
+
+        // =================================================================
+        // TABS
+        // =================================================================
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tab) {
+                    btn.classList.add('border-radar-green', 'text-radar-green');
+                    btn.classList.remove('border-transparent', 'text-gray-500');
+                } else {
+                    btn.classList.remove('border-radar-green', 'text-radar-green');
+                    btn.classList.add('border-transparent', 'text-gray-500');
+                }
+            });
+            updateUI();
+        }
+
+        // =================================================================
+        // FILTERS
+        // =================================================================
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentFilter = btn.dataset.filter;
+                
+                document.querySelectorAll('.filter-btn').forEach(b => {
+                    b.classList.remove('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
+                    b.classList.add('text-gray-400', 'border-transparent');
+                });
+                btn.classList.remove('text-gray-400', 'border-transparent');
+                btn.classList.add('bg-radar-green/10', 'text-radar-green', 'border-radar-green', 'font-bold');
+                
+                if (currentTab === 'promos') renderPromos();
+                else if (currentTab === 'clearance') renderClearance();
+                else if (currentTab === 'impact') renderImpactDeals();
+            });
+        });
+
+        // =================================================================
+        // RADAR BLIPS
+        // =================================================================
+        function updateBlips() {
+            const container = document.getElementById('blips-container');
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            
+            container.innerHTML = '';
+            
+            const numBlips = Math.min(promos.length, 12);
+            for (let i = 0; i < numBlips; i++) {
+                const blip = document.createElement('div');
+                blip.className = 'blip';
+                
+                // Random position in circle
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 20 + Math.random() * 70;
+                const x = 50 + Math.cos(angle) * radius * 0.4;
+                const y = 50 + Math.sin(angle) * radius * 0.4;
+                
+                blip.style.left = `${x}%`;
+                blip.style.top = `${y}%`;
+                blip.style.animationDelay = `${Math.random() * 4}s`;
+                
+                container.appendChild(blip);
+            }
+        }
+
+        // =================================================================
+        // MARQUEE - Clickable items
+        // =================================================================
+        function updateMarquee() {
+            const promos = promoData.promos?.filter(p => p.promo) || [];
+            if (promos.length === 0) return;
+            
+            const highlights = promos.slice(0, 15).map(p => {
+                const linkUrl = p.affiliate_url || p.url;
+                return `<a href="${linkUrl}" target="_blank" rel="noopener" class="hover:underline hover:text-white transition-colors">${p.brand.toUpperCase()}: ${p.promo.toUpperCase()}</a>`;
+            }).join(' <span class="mx-4 opacity-50">•</span> ');
+            
+            const content = highlights + ' <span class="mx-4 opacity-50">•</span> ';
+            document.getElementById('marquee-text').innerHTML = content;
+            document.getElementById('marquee-text-2').innerHTML = content;
+        }
+
+        // =================================================================
+        // REFRESH SCAN
+        // =================================================================
+        async function refreshScan() {
+            const btn = document.getElementById('scan-btn');
+            const icon = document.getElementById('scan-icon');
+            const panel = document.getElementById('radar-panel');
+            
+            btn.disabled = true;
+            icon.classList.add('animate-spin');
+            panel.classList.add('scanning');
+            
+            log('INITIATING MANUAL SCAN...');
+            
+            try {
+                await fetch('/api/refresh', { method: 'POST' });
+                log('SCAN TRIGGERED... AWAITING RESULTS');
+                
+                // Wait and refetch
+                setTimeout(async () => {
+                    await fetchData();
+                    btn.disabled = false;
+                    icon.classList.remove('animate-spin');
+                    panel.classList.remove('scanning');
+                    
+                    // Toast
+                    const notification = document.createElement('div');
+                    notification.className = 'fixed bottom-20 right-4 bg-radar-green text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(255,255,255,0.4)] z-[60] transform translate-y-20 transition-transform duration-300 border-l-4 border-white';
+                    notification.innerHTML = '<i class="fas fa-check-circle"></i> SCAN COMPLETE';
+                    document.body.appendChild(notification);
+                    
+                    requestAnimationFrame(() => notification.classList.remove('translate-y-20'));
+                    setTimeout(() => {
+                        notification.classList.add('translate-y-20');
+                        setTimeout(() => notification.remove(), 300);
+                    }, 3000);
+                }, 3000);
+            } catch (err) {
+                log('ERROR: SCAN FAILED');
+                btn.disabled = false;
+                icon.classList.remove('animate-spin');
+                panel.classList.remove('scanning');
+            }
+        }
+
+        // =================================================================
+        // GREEN FLASH = Cards WITH promo codes (most actionable)
+        // =================================================================
+        setInterval(() => {
+            const cards = document.querySelectorAll('a.deal-card');
+            const cardsWithCodes = Array.from(cards).filter(card => card.dataset.code);
+            
+            if (cardsWithCodes.length > 0) {
+                const randomCard = cardsWithCodes[Math.floor(Math.random() * cardsWithCodes.length)];
+                randomCard.style.borderColor = '#ffffff';
+                randomCard.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3)';
+                setTimeout(() => {
+                    randomCard.style.borderColor = '';
+                    randomCard.style.boxShadow = '';
+                }, 300);
+            }
+        }, 3000);
+
+        // =================================================================
+        // INIT
+        // =================================================================
+        fetchData(true); // Initial load - don't show transmissions
+        setInterval(() => fetchData(false), 10 * 60 * 1000); // Refresh every 10 mins - show new transmissions
+    </script>
+</body>
+</html>
