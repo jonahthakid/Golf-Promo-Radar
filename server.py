@@ -2371,6 +2371,59 @@ def get_brand_deals(brand_slug):
     })
 
 
+@app.route('/api/deal-history')
+def get_deal_history():
+    """Get deal history with first_seen timestamps for timeline view"""
+    history = load_deal_history()
+    data = load_data()
+    
+    # Build timeline from history
+    timeline = []
+    for key, info in history.items():
+        first_seen = info.get("first_seen")
+        last_seen = info.get("last_seen")
+        
+        # Parse key to get brand and promo
+        parts = key.split("|")
+        brand = parts[0] if len(parts) > 0 else "Unknown"
+        promo = parts[1] if len(parts) > 1 else ""
+        
+        timeline.append({
+            "brand": brand,
+            "promo": promo[:100],
+            "first_seen": first_seen,
+            "last_seen": last_seen,
+            "days_active": None  # Will calculate below
+        })
+    
+    # Calculate days active
+    for item in timeline:
+        if item["first_seen"] and item["last_seen"]:
+            try:
+                first = datetime.fromisoformat(item["first_seen"])
+                last = datetime.fromisoformat(item["last_seen"])
+                item["days_active"] = (last - first).days + 1
+            except:
+                pass
+    
+    # Sort by first_seen descending (newest first)
+    timeline.sort(key=lambda x: x.get("first_seen") or "", reverse=True)
+    
+    # Stats
+    now = datetime.now()
+    deals_today = sum(1 for t in timeline if t.get("first_seen") and t["first_seen"][:10] == now.strftime("%Y-%m-%d"))
+    deals_this_week = sum(1 for t in timeline if t.get("first_seen") and (now - datetime.fromisoformat(t["first_seen"])).days < 7)
+    
+    return jsonify({
+        "timeline": timeline[:500],  # Limit to 500 most recent
+        "total_deals_tracked": len(timeline),
+        "deals_today": deals_today,
+        "deals_this_week": deals_this_week,
+        "current_active_deals": len(data.get("promos", [])),
+        "last_updated": data.get("lastUpdated")
+    })
+
+
 # =============================================================================
 # ADMIN DASHBOARD ROUTES
 # =============================================================================
@@ -2393,6 +2446,13 @@ def admin_dashboard():
     if not session.get('admin_authenticated'):
         return send_from_directory('.', 'admin_login.html')
     return send_from_directory('.', 'admin_dashboard.html')
+
+
+@app.route('/admin/timeline')
+def admin_timeline():
+    if not session.get('admin_authenticated'):
+        return send_from_directory('.', 'admin_login.html')
+    return send_from_directory('.', 'admin_timeline.html')
 
 
 @app.route('/admin/login', methods=['POST'])
