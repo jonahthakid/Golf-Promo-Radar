@@ -239,7 +239,6 @@
     <!-- Navigation / Header -->
     <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="flex-1"></div>
             <div class="flex items-center gap-3">
                 <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden">
                     <div class="absolute inset-0 radar-sweep animate-spin-slow"></div>
@@ -265,15 +264,13 @@
                     </div>
                 </div>
             </div>
-            <div class="flex-1 flex justify-end">
-                <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
-                    <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
-                    <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
-                        <i class="fas fa-sync-alt" id="scan-icon"></i>
-                        Scan
-                    </span>
-                </button>
-            </div>
+            <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
+                <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
+                    <i class="fas fa-sync-alt" id="scan-icon"></i>
+                    Scan
+                </span>
+            </button>
         </div>
     </header>
 
