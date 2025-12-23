@@ -238,7 +238,8 @@
 
     <!-- Navigation / Header -->
     <header class="border-b border-radar-greenDim bg-radar-dark/90 backdrop-blur-md sticky top-0 z-40">
-        <div class="container mx-auto px-4 py-3 flex justify-center items-center">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex-1"></div>
             <div class="flex items-center gap-3">
                 <div class="relative w-10 h-10 border-2 border-radar-green rounded-full flex items-center justify-center overflow-hidden">
                     <div class="absolute inset-0 radar-sweep animate-spin-slow"></div>
@@ -263,6 +264,15 @@
                         <span class="font-loud text-3xl font-bold tracking-widest text-radar-green">RADAR</span>
                     </div>
                 </div>
+            </div>
+            <div class="flex-1 flex justify-end">
+                <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                    <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
+                    <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
+                        <i class="fas fa-sync-alt" id="scan-icon"></i>
+                        Scan
+                    </span>
+                </button>
             </div>
         </div>
     </header>
@@ -617,7 +627,8 @@
         function updateClock() {
             const now = new Date();
             const timeString = now.toISOString().substr(11, 8);
-            document.getElementById('zulu-clock').innerText = timeString;
+            const zuluEl = document.getElementById('zulu-clock');
+            if (zuluEl) zuluEl.innerText = timeString;
         }
         setInterval(updateClock, 1000);
         updateClock();
@@ -673,9 +684,12 @@
                 updateBlips();
                 updateMarquee();
                 
-                document.getElementById('feed-status').textContent = 'LIVE INTEL';
-                document.getElementById('feed-status').classList.remove('text-radar-red');
-                document.getElementById('feed-status').classList.add('text-radar-green');
+                const feedStatus = document.getElementById('feed-status');
+                if (feedStatus) {
+                    feedStatus.textContent = 'LIVE INTEL';
+                    feedStatus.classList.remove('text-radar-red');
+                    feedStatus.classList.add('text-radar-green');
+                }
                 
                 if (data.lastUpdated) {
                     const date = new Date(data.lastUpdated);
@@ -684,9 +698,12 @@
             } catch (error) {
                 console.error('Failed to fetch:', error);
                 log('ERROR: SIGNAL LOST');
-                document.getElementById('feed-status').textContent = 'CONNECTION ERROR';
-                document.getElementById('feed-status').classList.remove('text-radar-green');
-                document.getElementById('feed-status').classList.add('text-radar-red');
+                const feedStatusErr = document.getElementById('feed-status');
+                if (feedStatusErr) {
+                    feedStatusErr.textContent = 'CONNECTION ERROR';
+                    feedStatusErr.classList.remove('text-radar-green');
+                    feedStatusErr.classList.add('text-radar-red');
+                }
             }
         }
 
