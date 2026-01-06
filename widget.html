@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Skratch Radar Widget</title>
     
-    <!-- Fonts -->
+    <!-- Fonts - Fjalla One (headers) and Inter (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fjalla+One&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -25,15 +25,15 @@
                             black: '#050505',
                             dark: '#0a0a0a',
                             grid: '#1a1a1a',
-                            green: '#00ff41',
-                            greenDim: 'rgba(0, 255, 65, 0.2)',
+                            green: '#ffffff',
+                            greenDim: 'rgba(255, 255, 255, 0.2)',
                             red: '#ff3333',
                             white: '#e5e5e5'
                         }
                     },
                     fontFamily: {
-                        loud: ['Teko', 'sans-serif'],
-                        tech: ['Share Tech Mono', 'monospace'],
+                        loud: ['"Fjalla One"', 'sans-serif'],
+                        tech: ['Inter', 'sans-serif'],
                     },
                     animation: {
                         'spin-slow': 'spin 4s linear infinite',
@@ -60,13 +60,14 @@
             background-color: transparent;
             color: #e5e5e5;
             overflow: hidden;
+            text-transform: uppercase;
         }
 
         .widget-container {
             background-color: #050505;
             background-image: 
-                linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
             background-size: 20px 20px;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
             border: 1px solid #1a1a1a;
@@ -74,35 +75,20 @@
         }
 
         .radar-sweep {
-            background: conic-gradient(from 0deg, transparent 0deg, rgba(0, 255, 65, 0.1) 200deg, rgba(0, 255, 65, 0.8) 360deg);
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(255, 255, 255, 0.1) 200deg, rgba(255, 255, 255, 0.8) 360deg);
             border-radius: 50%;
         }
 
-        .crt-line {
-            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.1), rgba(255,255,255,0));
-            position: absolute;
-            width: 100%;
-            height: 10px;
-            z-index: 10;
-            animation: scanline 6s linear infinite;
-            pointer-events: none;
-        }
-
-        @keyframes scanline {
-            0% { top: -10%; }
-            100% { top: 110%; }
-        }
-
         .widget-container:hover {
-            border-color: #00ff41;
-            box-shadow: 0 0 30px rgba(0, 255, 65, 0.15);
+            border-color: #ffffff;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.15);
         }
 
         .corner-accent {
             position: absolute;
             width: 8px;
             height: 8px;
-            border-color: #00ff41;
+            border-color: #ffffff;
             border-style: solid;
             transition: all 0.3s;
         }
@@ -115,15 +101,17 @@
             width: 16px;
             height: 16px;
         }
+
+        .code-tag {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
     </style>
 </head>
 <body class="p-4 flex items-center justify-center min-h-screen">
 
     <!-- WIDGET START -->
     <div id="widget" class="widget-container w-[320px] h-[400px] flex flex-col group overflow-hidden">
-        
-        <!-- CRT Scanline -->
-        <div class="crt-line"></div>
 
         <!-- Corners -->
         <div class="corner-accent tl"></div>
@@ -133,8 +121,8 @@
 
         <!-- Header -->
         <div class="flex justify-between items-center p-3 border-b border-radar-grid bg-radar-dark/90 backdrop-blur">
-            <div class="flex items-center gap-1">
-                <svg width="100" height="50" viewBox="0 0 126 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-6 w-auto">
+            <div class="flex items-center gap-2">
+                <svg width="100" height="50" viewBox="0 0 126 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-5 w-auto">
                     <g clip-path="url(#clip_widget)">
                     <path d="M107.845 37.0542V54.4735C109.687 53.5255 111.412 52.5201 113.01 51.4643V39.8802C111.31 38.8819 109.588 37.9411 107.845 37.0542Z" fill="white"/>
                     <path d="M48.8327 12.0687C48.8327 11.3756 48.6347 10.8442 48.2388 10.4707C47.8429 10.0973 47.2915 9.968 46.5916 10.0865C45.7362 10.2337 44.8808 10.3881 44.0254 10.5569C44.0254 15.9863 44.0254 21.4157 44.0254 26.8415C45.2166 26.5147 46.1639 26.1054 46.8532 25.5847C47.5566 25.0568 48.0621 24.3853 48.3696 23.5594C48.6771 22.7335 48.8327 21.6958 48.8327 20.439C48.8327 17.6489 48.8327 14.8588 48.8327 12.0651V12.0687Z" fill="white"/>
@@ -147,157 +135,136 @@
                     </clipPath>
                     </defs>
                 </svg>
-                <span class="font-loud text-xl tracking-widest text-radar-green leading-none mt-1">RADAR</span>
+                <span class="font-loud text-xl tracking-wider text-white">RADAR</span>
             </div>
-            <div class="text-[10px] font-mono text-radar-green border border-radar-green px-1 rounded-sm animate-flash">
-                LIVE
+            <div class="text-[10px] text-white flex items-center gap-1">
+                <span class="w-1.5 h-1.5 bg-radar-red rounded-full animate-pulse"></span>
+                <span>LIVE</span>
             </div>
         </div>
 
-        <!-- Main Visual: Radar + Stats -->
-        <div class="flex-1 relative p-4 flex flex-col items-center justify-center">
-            
-            <!-- Radar Circle -->
-            <div class="relative w-32 h-32 mb-4">
-                <div class="absolute inset-0 border border-radar-greenDim rounded-full"></div>
-                <div class="absolute inset-2 border border-radar-greenDim rounded-full opacity-50"></div>
-                <div class="absolute inset-0 radar-sweep animate-spin-slow rounded-full"></div>
+        <!-- Radar Circle -->
+        <div class="flex-1 flex items-center justify-center p-4">
+            <div class="relative w-32 h-32 border border-radar-greenDim rounded-full bg-radar-black/50">
+                <!-- Grid Rings -->
+                <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75 opacity-50"></div>
+                <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50 opacity-30"></div>
+                
                 <!-- Crosshairs -->
-                <div class="absolute top-1/2 left-0 w-full h-[1px] bg-radar-greenDim"></div>
-                <div class="absolute left-1/2 top-0 h-full w-[1px] bg-radar-greenDim"></div>
-                
-                <!-- Blips - positioned dynamically -->
-                <div id="blips"></div>
-            </div>
+                <div class="absolute top-1/2 left-0 w-full h-px bg-radar-greenDim"></div>
+                <div class="absolute left-1/2 top-0 h-full w-px bg-radar-greenDim"></div>
 
-            <!-- Dynamic Content Area -->
-            <div class="w-full text-center relative z-10">
-                <div class="text-radar-greenDim text-[10px] tracking-widest mb-1">TARGET LOCKED</div>
+                <!-- Sweep -->
+                <div class="absolute inset-0 radar-sweep animate-spin-slow origin-center"></div>
                 
-                <div id="deal-container" class="transition-opacity duration-300 cursor-pointer hover:scale-105 transform">
-                    <h3 class="font-loud text-2xl text-white leading-none mb-1" id="deal-brand">LOADING...</h3>
-                    <p class="font-tech text-gray-400 text-xs mb-2 h-8 overflow-hidden" id="deal-desc">Scanning frequencies...</p>
-                    
-                    <div id="deal-badge" class="inline-flex items-center justify-center gap-2 bg-radar-grid px-3 py-1 border border-radar-grid group-hover:border-radar-green transition-colors">
-                        <span class="font-loud text-xl text-radar-green" id="deal-discount">--</span>
-                        <div id="code-divider" class="h-3 w-[1px] bg-gray-600 hidden"></div>
-                        <span class="font-mono text-xs text-white hidden" id="deal-code"></span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stats -->
-            <div class="absolute bottom-2 left-2 text-[8px] text-radar-grid font-mono">
-                <span id="stat-deals">--</span> DEALS<br>
-                <span id="stat-brands">--</span> BRANDS
-            </div>
-            
-            <div class="absolute bottom-2 right-2 text-[8px] text-gray-600 font-mono text-right">
-                <span id="stat-time">--:--:--</span>
+                <!-- Blips -->
+                <div id="blips" class="absolute inset-0"></div>
             </div>
         </div>
 
-        <!-- Footer / CTAs -->
-        <div class="p-3 bg-radar-green/10 border-t border-radar-greenDim">
-            <div class="flex gap-2">
-                <button id="cta-deal" class="flex-1 flex justify-between items-center text-radar-green font-loud text-base tracking-widest uppercase hover:bg-radar-green/20 px-2 py-1 transition-colors">
-                    <span>Get Deal</span>
-                    <i class="fas fa-crosshairs text-xs"></i>
-                </button>
-                <div class="w-[1px] bg-radar-greenDim"></div>
-                <button id="cta-all" class="flex-1 flex justify-between items-center text-white font-loud text-base tracking-widest uppercase hover:bg-radar-green/20 hover:text-radar-green px-2 py-1 transition-colors">
-                    <span>All Deals</span>
-                    <i class="fas fa-chevron-right text-xs"></i>
-                </button>
+        <!-- Deal Display -->
+        <div id="deal-container" class="px-4 pb-2 transition-opacity duration-300">
+            <div class="text-center">
+                <div id="deal-brand" class="font-loud text-2xl text-white tracking-wide">SCANNING...</div>
+                <div id="deal-desc" class="text-gray-400 text-xs mt-1 font-tech line-clamp-2">Acquiring targets</div>
             </div>
         </div>
 
+        <!-- Discount + Code -->
+        <div class="px-4 pb-3">
+            <div class="flex items-center justify-center gap-2">
+                <div id="deal-discount" class="font-loud text-2xl text-white tracking-wider">--% OFF</div>
+                <div id="code-divider" class="w-px h-6 bg-radar-grid hidden"></div>
+                <div id="deal-code" class="code-tag px-2 py-1 text-white text-sm font-tech hidden"></div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-between items-center px-3 py-2 border-t border-radar-grid bg-radar-dark/90 text-[10px] text-gray-500 font-tech">
+            <div class="flex items-center gap-2">
+                <span class="text-radar-green"><i class="fas fa-crosshairs mr-1"></i><span id="stat-count">0</span> TARGETS</span>
+            </div>
+            <div id="stat-time" class="text-gray-600">00:00:00</div>
+        </div>
+
+        <!-- CTA Button -->
+        <a id="cta-link" href="#" target="_blank" rel="noopener" class="block bg-white text-black font-loud text-center py-3 tracking-wider hover:bg-gray-200 transition-colors border-2 border-black">
+            VIEW DEAL <i class="fas fa-arrow-right ml-1"></i>
+        </a>
     </div>
     <!-- WIDGET END -->
 
     <script>
-        // =================================================================
-        // CONFIG
-        // =================================================================
+        // CONFIG - Change this to your Railway URL
         const API_URL = 'https://golf-promo-radar-production.up.railway.app/api/promos';
-        const RADAR_URL = 'https://golf-promo-radar-production.up.railway.app/';
-        
-        // =================================================================
-        // STATE
-        // =================================================================
-        let widgetDeals = [];
-        let currentIndex = 0;
-        let currentDealUrl = RADAR_URL;
+        const RADAR_URL = 'https://golf-promo-radar-production.up.railway.app';
 
-        // =================================================================
-        // ELEMENTS
-        // =================================================================
-        const widget = document.getElementById('widget');
+        // Elements
+        const container = document.getElementById('deal-container');
         const brandEl = document.getElementById('deal-brand');
         const descEl = document.getElementById('deal-desc');
         const discountEl = document.getElementById('deal-discount');
         const codeEl = document.getElementById('deal-code');
         const codeDivider = document.getElementById('code-divider');
-        const container = document.getElementById('deal-container');
+        const ctaEl = document.getElementById('cta-link');
         const blipsEl = document.getElementById('blips');
+        const countEl = document.getElementById('stat-count');
+
+        let widgetDeals = [];
+        let currentIndex = 0;
+        let currentDealUrl = RADAR_URL;
 
         // =================================================================
-        // CLICK HANDLERS
-        // =================================================================
-        document.getElementById('cta-deal').addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.open(currentDealUrl, '_blank');
-        });
-        
-        document.getElementById('cta-all').addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.open(RADAR_URL, '_blank');
-        });
-        
-        // Clicking the deal area also goes to current deal
-        container.addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.open(currentDealUrl, '_blank');
-        });
-
-        // =================================================================
-        // FETCH LIVE DATA
+        // FETCH DEALS
         // =================================================================
         async function fetchDeals() {
             try {
                 const response = await fetch(API_URL);
                 const data = await response.json();
                 
-                // Update stats
-                document.getElementById('stat-deals').textContent = (data.promos?.length || 0) + (data.impactDeals?.length || 0);
-                document.getElementById('stat-brands').textContent = new Set([
-                    ...(data.promos || []).map(p => p.brand),
-                    ...(data.impactDeals || []).map(p => p.brand)
-                ]).size;
-                
-                // Build deals array - prioritize codes and high discounts
+                // Extract best deals
                 const deals = [];
                 
-                // Add promos with codes first (most valuable)
-                (data.promos || []).filter(p => p.code && p.promo).forEach(p => {
-                    const discount = p.promo.match(/(\d+)%/)?.[1];
-                    deals.push({
-                        brand: p.brand.toUpperCase(),
-                        desc: truncate(p.promo, 50),
-                        discount: discount ? `${discount}% OFF` : 'DEAL',
-                        code: p.code,
-                        url: p.affiliate_url || p.url || RADAR_URL,
-                        priority: discount ? parseInt(discount) + 100 : 100 // Codes get +100 priority
-                    });
-                });
-                
-                // Add high-value promos without codes
-                (data.promos || []).filter(p => !p.code && p.promo).forEach(p => {
-                    const discount = p.promo.match(/(\d+)%/)?.[1];
-                    if (discount && parseInt(discount) >= 30) {
+                // Get promos with discounts
+                (data.promos || []).forEach(p => {
+                    const discountMatch = p.promo?.match(/(\d+)%/);
+                    if (discountMatch) {
+                        const discount = discountMatch[1];
                         deals.push({
                             brand: p.brand.toUpperCase(),
-                            desc: truncate(p.promo, 50),
+                            desc: truncate(p.promo, 60),
+                            discount: `${discount}% OFF`,
+                            code: p.code || null,
+                            url: p.affiliate_url || p.url || RADAR_URL,
+                            priority: parseInt(discount)
+                        });
+                    }
+                });
+                
+                // Get codes with discounts
+                (data.codes || []).forEach(c => {
+                    const discountMatch = c.discount?.match(/(\d+)%/);
+                    if (discountMatch && c.code) {
+                        const discount = discountMatch[1];
+                        deals.push({
+                            brand: c.brand.toUpperCase(),
+                            desc: truncate(c.discount, 60),
+                            discount: `${discount}% OFF`,
+                            code: c.code,
+                            url: c.affiliate_url || c.url || RADAR_URL,
+                            priority: parseInt(discount)
+                        });
+                    }
+                });
+                
+                // Add clearance
+                (data.clearance || []).forEach(p => {
+                    const discountMatch = p.promo?.match(/(\d+)%/);
+                    if (discountMatch) {
+                        const discount = discountMatch[1];
+                        deals.push({
+                            brand: p.brand.toUpperCase(),
+                            desc: truncate(p.promo, 60),
                             discount: `${discount}% OFF`,
                             code: null,
                             url: p.affiliate_url || p.url || RADAR_URL,
@@ -321,6 +288,9 @@
                 // Sort by priority (highest first) and take top 10
                 deals.sort((a, b) => b.priority - a.priority);
                 widgetDeals = deals.slice(0, 10);
+                
+                // Update count
+                countEl.textContent = deals.length;
                 
                 // Generate random blips based on deal count
                 generateBlips(Math.min(deals.length, 8));
@@ -347,6 +317,7 @@
         // =================================================================
         function showDeal(deal) {
             currentDealUrl = deal.url;
+            ctaEl.href = deal.url;
             
             brandEl.textContent = deal.brand;
             descEl.textContent = deal.desc;
@@ -413,7 +384,7 @@
                 const y = 64 + Math.sin(angle * Math.PI / 180) * distance;
                 const isRed = Math.random() > 0.7;
                 
-                blip.className = `absolute w-1.5 h-1.5 rounded-full animate-ping ${isRed ? 'bg-radar-red' : 'bg-radar-green'}`;
+                blip.className = `absolute w-1.5 h-1.5 rounded-full animate-ping ${isRed ? 'bg-radar-red' : 'bg-white'}`;
                 blip.style.left = `${x}px`;
                 blip.style.top = `${y}px`;
                 blip.style.animationDelay = `${Math.random() * 2}s`;
