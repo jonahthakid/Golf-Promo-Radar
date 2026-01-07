@@ -83,11 +83,6 @@
             border-color: #ffffff;
             box-shadow: 0 0 30px rgba(255, 255, 255, 0.15);
         }
-
-        .code-tag {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-        }
     </style>
 </head>
 <body class="p-4 flex items-center justify-center min-h-screen">
@@ -146,12 +141,10 @@
             </div>
         </div>
 
-        <!-- Discount + Code -->
+        <!-- Discount -->
         <div class="px-4 pb-1 h-12">
-            <div class="flex items-center justify-center gap-2">
+            <div class="flex items-center justify-center">
                 <div id="deal-discount" class="font-loud text-2xl text-white tracking-wider">--% OFF</div>
-                <div id="code-divider" class="w-px h-6 bg-radar-grid hidden"></div>
-                <div id="deal-code" class="code-tag px-2 py-1 text-white text-sm font-tech hidden"></div>
             </div>
         </div>
 
@@ -185,8 +178,6 @@
         const brandEl = document.getElementById('deal-brand');
         const descEl = document.getElementById('deal-desc');
         const discountEl = document.getElementById('deal-discount');
-        const codeEl = document.getElementById('deal-code');
-        const codeDivider = document.getElementById('code-divider');
         const ctaEl = document.getElementById('cta-link');
         const blipsEl = document.getElementById('blips');
         const countEl = document.getElementById('stat-count');
@@ -235,22 +226,6 @@
                             code: p.code || null,
                             url: p.affiliate_url || p.url || RADAR_URL,
                             priority: 5
-                        });
-                    }
-                });
-                
-                // Get codes with discounts
-                (data.codes || []).forEach(c => {
-                    const discountMatch = c.discount?.match(/(\d+)%/);
-                    if (discountMatch && c.code) {
-                        const discount = discountMatch[1];
-                        deals.push({
-                            brand: c.brand.toUpperCase(),
-                            desc: truncate(c.discount, 60),
-                            discount: `${discount}% OFF`,
-                            code: c.code,
-                            url: c.affiliate_url || c.url || RADAR_URL,
-                            priority: parseInt(discount)
                         });
                     }
                 });
@@ -329,15 +304,6 @@
             brandEl.textContent = deal.brand;
             descEl.textContent = deal.desc;
             discountEl.textContent = deal.discount;
-            
-            if (deal.code) {
-                codeEl.textContent = deal.code;
-                codeEl.classList.remove('hidden');
-                codeDivider.classList.remove('hidden');
-            } else {
-                codeEl.classList.add('hidden');
-                codeDivider.classList.add('hidden');
-            }
             
             // Cipher effect
             cipherText(brandEl, deal.brand);
