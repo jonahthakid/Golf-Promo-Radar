@@ -186,6 +186,21 @@
         let currentIndex = 0;
         let currentDealUrl = RADAR_URL;
 
+        // Filter out garbage promos
+        function isGarbagePromo(text) {
+            if (!text) return true;
+            const t = text.toLowerCase();
+            if (t.match(/use code [a-f0-9]{5,}/i)) return true;
+            if (t.match(/use code (default|test|example|placeholder)/i)) return true;
+            if (t.match(/^use code \w{1,10} for discount$/i)) return true;
+            if (t.includes("discount code isn't valid")) return true;
+            if (t.includes("code isn't valid")) return true;
+            if (t.includes("not valid on sale")) return true;
+            if (t.length < 15) return true;
+            if (t.match(/^(sale|new|shop now|view all)$/i)) return true;
+            return false;
+        }
+
         // =================================================================
         // FETCH DEALS
         // =================================================================
@@ -205,7 +220,7 @@
                 const deals = [];
                 
                 // Get promos with discounts
-                (data.promos || []).forEach(p => {
+                (data.promos || []).filter(p => !isGarbagePromo(p.promo)).forEach(p => {
                     const discountMatch = p.promo?.match(/(\d+)%/);
                     if (discountMatch) {
                         const discount = discountMatch[1];
@@ -231,7 +246,7 @@
                 });
                 
                 // Add clearance
-                (data.clearance || []).forEach(p => {
+                (data.clearance || []).filter(p => !isGarbagePromo(p.promo)).forEach(p => {
                     const discountMatch = p.promo?.match(/(\d+)%/);
                     if (discountMatch) {
                         const discount = discountMatch[1];
@@ -247,7 +262,7 @@
                 });
                 
                 // Add Impact partner deals
-                (data.impactDeals || []).forEach(d => {
+                (data.impactDeals || []).filter(d => !isGarbagePromo(d.promo)).forEach(d => {
                     deals.push({
                         brand: d.brand.toUpperCase(),
                         desc: truncate(d.promo, 50),
