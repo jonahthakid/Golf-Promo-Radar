@@ -72,7 +72,6 @@
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
             border: 1px solid #1a1a1a;
             position: relative;
-            padding-bottom: 16px;
         }
 
         .radar-sweep {
@@ -97,7 +96,7 @@
     <div id="widget" class="widget-container w-[320px] h-[400px] flex flex-col group overflow-hidden rounded-xl">
 
         <!-- Header -->
-        <div class="flex justify-between items-center p-3 border-b border-radar-grid bg-radar-dark/90 backdrop-blur">
+        <div class="flex justify-between items-center px-3 py-2 border-b border-radar-grid bg-radar-dark/90 backdrop-blur">
             <div class="flex items-center gap-2">
                 <svg width="100" height="50" viewBox="0 0 126 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="h-5 w-auto">
                     <g clip-path="url(#clip_widget)">
@@ -121,8 +120,8 @@
         </div>
 
         <!-- Radar Circle -->
-        <div class="flex-1 flex items-center justify-center p-4">
-            <div class="relative w-32 h-32 border border-radar-greenDim rounded-full bg-radar-black/50">
+        <div class="flex-1 flex items-center justify-center p-2">
+            <div class="relative w-24 h-24 border border-radar-greenDim rounded-full bg-radar-black/50">
                 <!-- Grid Rings -->
                 <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75 opacity-50"></div>
                 <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50 opacity-30"></div>
@@ -165,7 +164,7 @@
         </div>
 
         <!-- CTA Button -->
-        <div class="px-3 pt-3 pb-4">
+        <div class="px-3 pt-2 pb-5">
             <a id="cta-link" href="#" target="_blank" rel="noopener" class="block bg-gray-800 text-white font-loud text-sm text-center py-2 rounded-md tracking-wider hover:bg-gray-700 transition-colors">
                 VIEW DEAL <i class="fas fa-arrow-right ml-1 text-xs"></i>
             </a>
@@ -387,9 +386,9 @@
             for (let i = 0; i < count; i++) {
                 const blip = document.createElement('div');
                 const angle = Math.random() * 360;
-                const distance = 20 + Math.random() * 40;
-                const x = 64 + Math.cos(angle * Math.PI / 180) * distance;
-                const y = 64 + Math.sin(angle * Math.PI / 180) * distance;
+                const distance = 15 + Math.random() * 28;
+                const x = 48 + Math.cos(angle * Math.PI / 180) * distance;
+                const y = 48 + Math.sin(angle * Math.PI / 180) * distance;
                 const isRed = Math.random() > 0.7;
                 
                 blip.className = `absolute w-1.5 h-1.5 rounded-full animate-ping ${isRed ? 'bg-radar-red' : 'bg-white'}`;
