@@ -737,11 +737,34 @@
         // =================================================================
         // RENDER PROMOS
         // =================================================================
+        // Filter out garbage/junk promos
+        function isGarbagePromo(text) {
+            if (!text) return true;
+            const t = text.toLowerCase();
+            
+            // Hex codes as "codes"
+            if (t.match(/use code [a-f0-9]{5,}/i)) return true;
+            // Placeholder codes
+            if (t.match(/use code (default|test|example|placeholder)/i)) return true;
+            // Generic "use code X for discount" with no real info
+            if (t.match(/^use code \w{1,10} for discount$/i)) return true;
+            // Error messages
+            if (t.includes("discount code isn't valid")) return true;
+            if (t.includes("code isn't valid")) return true;
+            if (t.includes("not valid on sale")) return true;
+            // Too short
+            if (t.length < 15) return true;
+            // Just "sale" or "new"
+            if (t.match(/^(sale|new|shop now|view all)$/i)) return true;
+            
+            return false;
+        }
+        
         function renderPromos() {
             const grid = document.getElementById('deals-grid');
             const featured = document.getElementById('featured-deal');
             
-            let promos = promoData.promos?.filter(p => p.promo) || [];
+            let promos = promoData.promos?.filter(p => p.promo && !isGarbagePromo(p.promo)) || [];
             
             // Filter
             if (currentFilter !== 'all') {
@@ -971,7 +994,7 @@
             const grid = document.getElementById('deals-grid');
             document.getElementById('featured-deal').className = 'hidden';
             
-            let items = promoData.clearance || [];
+            let items = (promoData.clearance || []).filter(c => !isGarbagePromo(c.promo));
             
             // Filter by category
             if (currentFilter !== 'all') {
@@ -1160,7 +1183,7 @@
             const grid = document.getElementById('deals-grid');
             document.getElementById('featured-deal').className = 'hidden';
             
-            let offers = promoData.emailOffers || [];
+            let offers = (promoData.emailOffers || []).filter(o => !isGarbagePromo(o.offer));
             
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
