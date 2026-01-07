@@ -336,8 +336,8 @@
                     <div class="font-loud text-3xl text-white" id="stat-promos">0</div>
                 </div>
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
-                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Codes</div>
-                    <div class="font-loud text-3xl text-radar-green" id="stat-codes">0</div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Clearance</div>
+                    <div class="font-loud text-3xl text-radar-green" id="stat-clearance">0</div>
                 </div>
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
                     <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</div>
@@ -404,9 +404,6 @@
             <div class="flex gap-2 mb-2 flex-wrap">
                 <button onclick="switchTab('promos')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-radar-green text-radar-green" data-tab="promos">
                     PROMOS
-                </button>
-                <button onclick="switchTab('codes')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="codes">
-                    CODES
                 </button>
                 <button onclick="switchTab('clearance')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="clearance">
                     CLEARANCE
@@ -719,18 +716,16 @@
         function updateUI() {
             // Stats
             const promos = promoData.promos?.filter(p => p.promo) || [];
-            const codes = promoData.codes || [];
             const emails = promoData.emailOffers || [];
             const clearance = promoData.clearance || [];
             
             document.getElementById('stat-promos').textContent = promos.length;
-            document.getElementById('stat-codes').textContent = codes.length;
+            document.getElementById('stat-clearance').textContent = clearance.length;
             document.getElementById('stat-email').textContent = emails.length;
             document.getElementById('target-count').textContent = promos.length.toString().padStart(3, '0');
 
             // Render current tab
             if (currentTab === 'promos') renderPromos();
-            else if (currentTab === 'codes') renderCodes();
             else if (currentTab === 'clearance') renderClearance();
             else if (currentTab === 'impact') renderImpactDeals();
             else if (currentTab === 'email') renderEmail();
@@ -812,7 +807,6 @@
                                 <p class="text-gray-400 text-sm mb-2">${top.promo}</p>
                                 <div class="flex flex-wrap gap-2 mt-2">
                                     <span class="px-2 py-1 bg-radar-red/20 text-radar-red border border-radar-red/50 text-xs font-bold uppercase">${discount}% OFF</span>
-                                    ${top.code ? `<span class="px-2 py-1 bg-gray-800 text-gray-300 border border-gray-700 text-xs font-bold uppercase code-copy" onclick="copyCode('${top.code}', this)">CODE: ${top.code}</span>` : ''}
                                 </div>
                             </div>
                             <a href="${linkUrl}" target="_blank" rel="noopener" class="mt-4 sm:mt-0 px-6 py-3 bg-radar-red hover:bg-red-600 text-black font-loud text-xl uppercase tracking-wider transition-colors">
@@ -907,10 +901,9 @@
                             </div>
                             
                             <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
-                            ${p.email_offer ? `<p class="text-radar-green text-xs mb-3 relative z-10"><i class="fas fa-envelope mr-1"></i>Email signup: ${p.email_offer}</p>` : ''}
                             
                             <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
-                                ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-tech" onclick="event.preventDefault(); event.stopPropagation(); copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
+                                <span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>
                                 <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     View <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
