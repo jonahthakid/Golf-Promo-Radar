@@ -93,13 +93,114 @@ def fetch_rss_articles(max_per_feed=5):
     
     return all_articles
 
+
+# =============================================================================
+# REDDIT COMMUNITY INTEL
+# =============================================================================
+REDDIT_URLS = [
+    {"url": "https://www.reddit.com/r/DailyGolfSteals/new.json", "sub": "DailyGolfSteals"},
+    {"url": "https://www.reddit.com/r/golf/search.json?q=flair%3Adeal&restrict_sr=1&sort=new", "sub": "golf"},
+]
+
+def fetch_reddit_intel(limit=15):
+    """
+    Scrapes r/DailyGolfSteals and r/golf for human-curated deals.
+    Uses public JSON endpoints - no API credentials needed.
+    """
+    intel_deals = []
+    seen_urls = set()
+    
+    for source in REDDIT_URLS:
+        try:
+            headers = {'User-Agent': 'SkratchRadar/1.0 (golf deal aggregator)'}
+            resp = requests.get(source["url"], headers=headers, timeout=10)
+            
+            if resp.status_code == 429:
+                print(f"⚠️  Reddit rate limited on r/{source['sub']}")
+                continue
+                
+            if resp.status_code != 200:
+                continue
+                
+            data = resp.json()
+            posts = data.get('data', {}).get('children', [])
+            
+            for post in posts:
+                try:
+                    p = post.get('data', {})
+                    title = p.get('title', '')
+                    selftext = p.get('selftext', '')
+                    post_url = p.get('url', '')
+                    permalink = p.get('permalink', '')
+                    created = p.get('created_utc', 0)
+                    score = p.get('score', 0)
+                    
+                    # Skip low-quality posts
+                    if score < 0:
+                        continue
+                    
+                    # Filter for deal-related keywords
+                    title_lower = title.lower()
+                    if not any(x in title_lower for x in ['sale', '% off', '%off', 'deal', 'coupon', 'code', 'clearance', 'bogo', 'free ship', 'discount']):
+                        continue
+                    
+                    # Extract URLs from selftext
+                    found_urls = re.findall(r'(https?://[^\s\)]+)', selftext)
+                    deal_url = found_urls[0] if found_urls else post_url
+                    
+                    # Skip if we've seen this URL
+                    if deal_url in seen_urls:
+                        continue
+                    seen_urls.add(deal_url)
+                    
+                    # Try to identify brand from known brands list
+                    brand = "Community Find"
+                    for b in BRANDS:
+                        brand_name = b['name'].lower()
+                        if brand_name in title_lower or brand_name in deal_url.lower():
+                            brand = b['name']
+                            break
+                    
+                    # Extract discount percentage if present
+                    discount_match = re.search(r'(\d+)\s*%', title)
+                    discount = int(discount_match.group(1)) if discount_match else None
+                    
+                    # Extract promo code if mentioned
+                    code_match = re.search(r'(?:code|coupon)[:\s]+([A-Z0-9]+)', title, re.IGNORECASE)
+                    code = code_match.group(1).upper() if code_match else None
+                    
+                    intel_deals.append({
+                        "brand": brand,
+                        "promo": title[:150],
+                        "url": deal_url,
+                        "reddit_url": f"https://reddit.com{permalink}",
+                        "source": f"r/{source['sub']}",
+                        "score": score,
+                        "code": code,
+                        "discount": discount,
+                        "created_utc": created,
+                        "is_new": True,
+                        "type": "community_intel"
+                    })
+                    
+                except Exception as e:
+                    continue
+                    
+        except Exception as e:
+            print(f"⚠️  Reddit scrape failed for r/{source['sub']}: {e}")
+            continue
+    
+    # Sort by score (most upvoted first) then limit
+    intel_deals.sort(key=lambda x: x.get('score', 0), reverse=True)
+    return intel_deals[:limit]
+
 # =============================================================================
 # IMPACT RADIUS CONFIG
 # =============================================================================
 IMPACT_ENABLED = os.environ.get("IMPACT_ENABLED", "true").lower() == "true"
 IMPACT_MEDIA_PARTNER_ID = os.environ.get("IMPACT_MEDIA_PARTNER_ID", "5770409")
-IMPACT_ACCOUNT_SID = os.environ.get("IMPACT_ACCOUNT_SID", "IRegUCDRRCRj5770409FimSuCrN9KE65z1")
-IMPACT_AUTH_TOKEN = os.environ.get("IMPACT_AUTH_TOKEN", "LMwc6y~ALQvsLtN_UorwhsXV6eFEyVPD")
+IMPACT_ACCOUNT_SID = os.environ.get("IMPACT_ACCOUNT_SID", "")
+IMPACT_AUTH_TOKEN = os.environ.get("IMPACT_AUTH_TOKEN", "")
 
 # Import affiliate links (create affiliate_urls.py with your links)
 try:
@@ -2099,7 +2200,8 @@ def save_data(promos, clearance=None, impact_deals=None):
         "clearance": fresh_clearance,
         "impactDeals": fresh_impact,
         "tacticalNukes": [],  # Will be populated below
-        "articles": []  # Will be populated below
+        "articles": [],  # Will be populated below
+        "communityIntel": []  # Will be populated below
     }
     
     # Load tactical nukes from JSON config file (editor-curated)
@@ -2120,6 +2222,15 @@ def save_data(promos, clearance=None, impact_deals=None):
             print(f"📰 Fetched {len(articles)} articles from RSS feeds")
     except Exception as e:
         print(f"⚠️  RSS fetch failed: {e}")
+    
+    # Fetch Reddit community intel
+    try:
+        reddit_intel = fetch_reddit_intel(limit=15)
+        if reddit_intel:
+            data["communityIntel"] = reddit_intel
+            print(f"🔴 Reddit Intel: {len(reddit_intel)} community deals found")
+    except Exception as e:
+        print(f"⚠️  Reddit fetch failed: {e}")
     
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -2142,6 +2253,8 @@ def load_data():
                     data["tacticalNukes"] = []
                 if "articles" not in data:
                     data["articles"] = []
+                if "communityIntel" not in data:
+                    data["communityIntel"] = []
                 return data
         except:
             pass
@@ -2155,7 +2268,8 @@ def load_data():
         "clearance": [],
         "impactDeals": [],
         "tacticalNukes": [],
-        "articles": []
+        "articles": [],
+        "communityIntel": []
     }
 
 
@@ -2163,7 +2277,7 @@ def load_data():
 # FLASK APP
 # =============================================================================
 app = Flask(__name__, static_folder='.')
-app.secret_key = os.environ.get("SECRET_KEY", "skratch-radar-secret-key-change-me")
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app)
 
 @app.route('/')
@@ -2174,6 +2288,11 @@ def index():
 @app.route('/preview')
 def preview():
     return send_from_directory(BASE_DIR, 'golf_promo_radar_preview.html')
+
+
+@app.route('/classic')
+def classic():
+    return send_from_directory(BASE_DIR, 'golf_promo_radar_classic.html')
 
 
 @app.route('/widget')
@@ -2253,12 +2372,57 @@ def add_subid(url, source="radar"):
 @app.route('/go')
 def track_click():
     """Track click and redirect to affiliate URL with subId"""
+    from urllib.parse import urlparse
+    
     url = request.args.get('url', '')
     brand = request.args.get('brand', 'Unknown')
     source = request.args.get('source', 'radar')
     
     if not url:
         return "Missing URL", 400
+    
+    # Validate URL format
+    if not url.startswith(('https://', 'http://')):
+        return "Invalid URL", 400
+    
+    # Parse and validate domain
+    try:
+        parsed = urlparse(url)
+        if not parsed.netloc:
+            return "Invalid URL", 400
+        
+        # Build whitelist from known brand URLs
+        known_domains = set()
+        for b in BRANDS:
+            try:
+                brand_parsed = urlparse(b.get('url', ''))
+                if brand_parsed.netloc:
+                    known_domains.add(brand_parsed.netloc.lower().replace('www.', ''))
+            except:
+                pass
+        
+        # Add common affiliate domains
+        known_domains.update([
+            'goto.target.com', 'goto.walmart.com', 'avantlink.com',
+            'pntra.com', 'pjatr.com', 'pntrs.com', 'pntrac.com',
+            'sjv.io', 'impact.com', 'impactradius.com',
+            'amazon.com', 'linksynergy.com', 'shareasale.com',
+            'awin1.com', 'cj.com', 'commission-junction.com'
+        ])
+        
+        # Check if domain or its parent is whitelisted
+        url_domain = parsed.netloc.lower().replace('www.', '')
+        is_allowed = any(
+            url_domain == d or url_domain.endswith('.' + d) 
+            for d in known_domains
+        )
+        
+        if not is_allowed:
+            print(f"⚠️  Blocked redirect to untrusted domain: {url_domain}")
+            return "Untrusted redirect destination", 403
+            
+    except Exception as e:
+        return "Invalid URL", 400
     
     # Log the click
     save_click(brand, url, source)
@@ -2544,16 +2708,21 @@ def get_deal_history():
 # =============================================================================
 # ADMIN DASHBOARD ROUTES
 # =============================================================================
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "skratch2024")  # Set in Railway env vars
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    print("⚠️  WARNING: ADMIN_PASSWORD not set - admin routes will be inaccessible")
 
 def check_admin_auth():
     """Check if request has valid admin auth"""
+    # Fail if no password configured
+    if not ADMIN_PASSWORD:
+        return False
     # Check session
     if session.get('admin_authenticated'):
         return True
     # Check header (for API calls)
     auth_header = request.headers.get('X-Admin-Password')
-    if auth_header == ADMIN_PASSWORD:
+    if auth_header and auth_header == ADMIN_PASSWORD:
         return True
     return False
 
@@ -2574,10 +2743,13 @@ def admin_timeline():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
+    if not ADMIN_PASSWORD:
+        return jsonify({"success": False, "error": "Admin not configured"}), 503
+    
     data = request.get_json() or {}
     password = data.get('password', '')
     
-    if password == ADMIN_PASSWORD:
+    if password and password == ADMIN_PASSWORD:
         session['admin_authenticated'] = True
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Invalid password"}), 401
