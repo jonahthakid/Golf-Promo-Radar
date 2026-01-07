@@ -5,10 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GOLF PROMO RADAR // SKRATCH EDITION</title>
     
-    <!-- Fonts -->
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-S5EFWGS132"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-S5EFWGS132');
+    </script>
+    
+    <!-- Fonts - Fjalla One (headers) and Inter (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Teko:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fjalla+One&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -25,16 +34,16 @@
                             black: '#050505',
                             dark: '#0a0a0a',
                             grid: '#1a1a1a',
-                            green: '#00ff41',
-                            greenDim: 'rgba(0, 255, 65, 0.2)',
+                            green: '#ffffff',
+                            greenDim: 'rgba(255, 255, 255, 0.2)',
                             red: '#ff3333',
-                            orange: '#ff9500',
+                            orange: '#ffffff',
                             white: '#e5e5e5'
                         }
                     },
                     fontFamily: {
-                        loud: ['Teko', 'sans-serif'],
-                        tech: ['Share Tech Mono', 'monospace'],
+                        loud: ['"Fjalla One"', 'sans-serif'],
+                        tech: ['Inter', 'sans-serif'],
                     },
                     animation: {
                         'spin-slow': 'spin 4s linear infinite',
@@ -58,35 +67,37 @@
             background-color: #050505;
             color: #e5e5e5;
             overflow-x: hidden;
+            font-family: 'Inter', sans-serif;
+            text-transform: uppercase;
             background-image: 
-                linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
             background-size: 40px 40px;
         }
 
+        /* Clean radar sweep - no green tint */
         .radar-sweep {
-            background: conic-gradient(from 0deg, transparent 0deg, rgba(0, 255, 65, 0.1) 200deg, rgba(0, 255, 65, 0.8) 360deg);
+            background: conic-gradient(from 0deg, transparent 0deg, rgba(255, 255, 255, 0.1) 200deg, rgba(255, 255, 255, 0.3) 360deg);
             border-radius: 50%;
         }
 
+        /* Remove CRT overlay - clean look */
         .crt-overlay {
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            background-size: 100% 2px, 3px 100%;
-            pointer-events: none;
+            display: none;
         }
 
         .glitch-text:hover {
-            text-shadow: 2px 0 #ff3333, -2px 0 #00ff41;
+            text-shadow: 2px 0 #ff3333, -2px 0 #ffffff;
         }
 
         .blip {
             position: absolute;
             width: 6px;
             height: 6px;
-            background: #00ff41;
+            background: #ffffff;
             border-radius: 50%;
             transform: translate(-50%, -50%);
-            box-shadow: 0 0 10px #00ff41;
+            box-shadow: 0 0 10px #ffffff;
             opacity: 0;
             animation: blipAnim 4s infinite;
         }
@@ -103,7 +114,7 @@
             position: absolute;
             width: 10px;
             height: 10px;
-            border-color: #00ff41;
+            border-color: #ffffff;
             border-style: solid;
             transition: all 0.3s ease;
             opacity: 0;
@@ -128,10 +139,10 @@
             transform: translateY(0);
         }
 
-        /* Scrollbar */
+        /* Scrollbar - clean black/white */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
-        ::-webkit-scrollbar-thumb { background: #1a1a1a; border: 1px solid #00ff41; }
+        ::-webkit-scrollbar-thumb { background: #333; border: 1px solid #555; }
         
         /* Line clamp for article titles */
         .line-clamp-2 {
@@ -152,7 +163,7 @@
             transform: translateX(0);
         }
 
-        /* New code highlight - pulsing red/orange border */
+        /* New code highlight - pulsing red/white border */
         .new-code-highlight {
             animation: newCodePulse 1s ease-in-out infinite;
             border-color: #ff3333 !important;
@@ -164,8 +175,8 @@
                 border-color: #ff3333;
             }
             50% { 
-                box-shadow: 0 0 40px rgba(255, 149, 0, 0.6);
-                border-color: #ff9500;
+                box-shadow: 0 0 40px rgba(255, 255, 255, 0.6);
+                border-color: #ffffff;
             }
         }
 
@@ -175,11 +186,11 @@
             transition: all 0.2s;
         }
         .code-copy:hover {
-            background: #00ff41;
+            background: #ffffff;
             color: black;
         }
         .code-copy.copied {
-            background: #00ff41;
+            background: #ffffff;
             color: black;
         }
 
@@ -211,7 +222,7 @@
 <body class="font-tech min-h-screen flex flex-col relative">
 
     <!-- CRT Effect Overlay -->
-    <div class="crt-overlay fixed inset-0 z-50 h-full w-full"></div>
+    <!-- Clean design - no CRT overlay -->
 
     <!-- Incoming Transmission Popup -->
     <div id="transmission-popup" class="fixed top-20 left-1/2 -translate-x-1/2 bg-radar-dark border-2 border-radar-red px-8 py-4 z-[100] shadow-[0_0_30px_rgba(255,51,51,0.3)] transition-all duration-500 opacity-0 -translate-y-10 pointer-events-none">
@@ -227,7 +238,7 @@
                 <div id="transmission-brand" class="text-white font-loud text-2xl">
                     BRAND NAME
                 </div>
-                <div id="transmission-detail" class="text-radar-green font-bold tracking-widest font-mono">
+                <div id="transmission-detail" class="text-radar-green font-bold tracking-widest font-tech">
                     DEAL DETAILS
                 </div>
             </div>
@@ -260,29 +271,15 @@
                         </svg>
                         <span class="font-loud text-3xl font-bold tracking-widest text-radar-green">RADAR</span>
                     </div>
-                    <div class="text-[10px] text-radar-green tracking-[0.3em] uppercase opacity-80 flex items-center gap-2">
-                        <span id="feed-status">LIVE INTEL</span>
-                        <span class="w-1 h-1 bg-radar-green rounded-full animate-pulse"></span>
-                    </div>
                 </div>
             </div>
-
-            <div class="flex items-center gap-6">
-                <!-- Zulu Time Clock -->
-                <div class="hidden md:block text-right">
-                    <div class="text-xs text-gray-500 uppercase tracking-wider">Zulu Time</div>
-                    <div id="zulu-clock" class="text-white font-mono text-lg leading-none">00:00:00</div>
-                </div>
-
-                <!-- Refresh Button -->
-                <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
-                    <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
-                    <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
-                        <i class="fas fa-sync-alt" id="scan-icon"></i>
-                        Scan
-                    </span>
-                </button>
-            </div>
+            <button id="scan-btn" onclick="refreshScan()" class="group relative px-6 py-2 bg-transparent border border-radar-green overflow-hidden hover:bg-radar-green/10 transition-all duration-300">
+                <div class="absolute inset-0 w-1 bg-radar-green transition-all duration-300 group-hover:w-full opacity-10"></div>
+                <span class="relative flex items-center gap-2 font-loud text-xl tracking-wider uppercase text-radar-green group-hover:text-white transition-colors">
+                    <i class="fas fa-sync-alt" id="scan-icon"></i>
+                    Scan
+                </span>
+            </button>
         </div>
     </header>
 
@@ -295,10 +292,10 @@
             <!-- Radar Visualization Panel -->
             <div id="radar-panel" class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
                 <div class="absolute top-2 left-2 text-xs text-radar-greenDim">SYS.MONITORING</div>
-                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE</div>
+                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE INTEL</div>
                 
                 <!-- The Radar Circle -->
-                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(0,255,65,0.1)]" id="radar-circle">
+                <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(255,255,255,0.1)]" id="radar-circle">
                     <!-- Grid Rings -->
                     <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-75"></div>
                     <div class="absolute inset-0 border border-radar-greenDim rounded-full scale-50"></div>
@@ -323,11 +320,11 @@
                 <div class="mt-4 pt-3 border-t border-radar-grid text-[10px] text-gray-600 space-y-1">
                     <div class="flex items-center gap-2">
                         <span class="w-3 h-3 border border-radar-green bg-radar-green/20"></span>
-                        <span>GREEN FLASH = Has active promo code</span>
+                        <span>ACTIVE = Has active promo code</span>
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="w-3 h-3 border border-radar-red bg-radar-red/20 animate-pulse"></span>
-                        <span>RED PULSE = New code just detected</span>
+                        <span>PULSE = New code just detected</span>
                     </div>
                 </div>
             </div>
@@ -344,7 +341,7 @@
                 </div>
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
                     <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</div>
-                    <div class="font-loud text-3xl text-radar-orange" id="stat-email">0</div>
+                    <div class="font-loud text-3xl text-radar-green" id="stat-email">0</div>
                 </div>
             </div>
 
@@ -385,7 +382,7 @@
             </div>
 
             <!-- System Log -->
-            <div class="font-mono text-[10px] text-gray-600 space-y-1 h-32 overflow-hidden border-t border-radar-grid pt-2 opacity-50" id="system-log">
+            <div class="font-tech text-[10px] text-gray-600 space-y-1 h-32 overflow-hidden border-t border-radar-grid pt-2 opacity-50" id="system-log">
                 <div>> INITIATING SEQUENCE... OK</div>
                 <div>> CONNECTING TO SERVER... OK</div>
                 <div>> AWAITING DATA STREAM...</div>
@@ -433,14 +430,14 @@
                     </div>
                     <h3 class="font-loud text-2xl text-white tracking-wider">TACTICAL NUKES</h3>
                     <div class="flex-1 h-px bg-radar-grid"></div>
-                    <span class="text-gray-600 text-xs font-mono">EDITOR'S PICKS</span>
+                    <span class="text-gray-600 text-xs font-tech">EDITOR'S PICKS</span>
                 </div>
                 
                 <div id="tactical-nukes-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <!-- Products populated by JS -->
                 </div>
                 
-                <button id="tactical-nukes-toggle" onclick="toggleTacticalNukes()" class="hidden w-full mt-3 py-2 border border-radar-grid text-gray-500 hover:text-radar-green hover:border-radar-green transition-colors font-mono text-sm">
+                <button id="tactical-nukes-toggle" onclick="toggleTacticalNukes()" class="hidden w-full mt-3 py-2 border border-radar-grid text-gray-500 hover:text-radar-green hover:border-radar-green transition-colors font-tech text-sm">
                     <i class="fas fa-chevron-down mr-2"></i>VIEW ALL
                 </button>
             </div>
@@ -481,7 +478,7 @@
         
         <!-- Footer -->
         <div class="p-3 border-t border-radar-grid text-center">
-            <span class="text-gray-600 text-xs font-mono">FROM THE NETWORK</span>
+            <span class="text-gray-600 text-xs font-tech">FROM THE NETWORK</span>
         </div>
     </div>
     
@@ -513,7 +510,7 @@
             <div class="font-loud text-2xl text-white mb-2 tracking-widest">
                 GOLF PROMO <span class="text-radar-green">RADAR</span>
             </div>
-            <p class="text-gray-600 text-xs font-mono uppercase tracking-widest">
+            <p class="text-gray-600 text-xs font-tech uppercase tracking-widest">
                 Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins
             </p>
         </div>
@@ -636,7 +633,8 @@
         function updateClock() {
             const now = new Date();
             const timeString = now.toISOString().substr(11, 8);
-            document.getElementById('zulu-clock').innerText = timeString;
+            const zuluEl = document.getElementById('zulu-clock');
+            if (zuluEl) zuluEl.innerText = timeString;
         }
         setInterval(updateClock, 1000);
         updateClock();
@@ -692,9 +690,12 @@
                 updateBlips();
                 updateMarquee();
                 
-                document.getElementById('feed-status').textContent = 'LIVE INTEL';
-                document.getElementById('feed-status').classList.remove('text-radar-red');
-                document.getElementById('feed-status').classList.add('text-radar-green');
+                const feedStatus = document.getElementById('feed-status');
+                if (feedStatus) {
+                    feedStatus.textContent = 'LIVE INTEL';
+                    feedStatus.classList.remove('text-radar-red');
+                    feedStatus.classList.add('text-radar-green');
+                }
                 
                 if (data.lastUpdated) {
                     const date = new Date(data.lastUpdated);
@@ -703,9 +704,12 @@
             } catch (error) {
                 console.error('Failed to fetch:', error);
                 log('ERROR: SIGNAL LOST');
-                document.getElementById('feed-status').textContent = 'CONNECTION ERROR';
-                document.getElementById('feed-status').classList.remove('text-radar-green');
-                document.getElementById('feed-status').classList.add('text-radar-red');
+                const feedStatusErr = document.getElementById('feed-status');
+                if (feedStatusErr) {
+                    feedStatusErr.textContent = 'CONNECTION ERROR';
+                    feedStatusErr.classList.remove('text-radar-green');
+                    feedStatusErr.classList.add('text-radar-red');
+                }
             }
         }
 
@@ -857,7 +861,7 @@
                 if (isNew) {
                     badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
                 } else if (isHot) {
-                    badge = '<span class="text-radar-orange text-xs border border-radar-orange px-1">HOT</span>';
+                    badge = '<span class="text-radar-green text-xs border border-radar-green px-1">HOT</span>';
                 } else if (isStale) {
                     badge = '<span class="text-gray-500 text-xs border border-gray-600 px-1">ONGOING</span>';
                 }
@@ -879,7 +883,7 @@
                 const firstSeenText = p.first_seen ? formatFirstSeen(p.first_seen) : '';
                 
                 return `
-                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : isHot ? 'border-radar-orange' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : isHot ? 'border-radar-green' : ''}" data-category="${p.category}" data-code="${p.code || ''}">
                         <div class="target-corner tl"></div>
                         <div class="target-corner tr"></div>
                         <div class="target-corner bl"></div>
@@ -903,19 +907,17 @@
                             </div>
                             
                             <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${p.promo}</p>
-                            ${p.email_offer ? `<p class="text-radar-orange text-xs mb-3 relative z-10"><i class="fas fa-envelope mr-1"></i>Email signup: ${p.email_offer}</p>` : ''}
+                            ${p.email_offer ? `<p class="text-radar-green text-xs mb-3 relative z-10"><i class="fas fa-envelope mr-1"></i>Email signup: ${p.email_offer}</p>` : ''}
                             
                             <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
-                                ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-mono" onclick="event.preventDefault(); event.stopPropagation(); copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
+                                ${p.code ? `<span class="code-copy text-white bg-gray-800 px-2 py-0.5 text-xs font-tech" onclick="event.preventDefault(); event.stopPropagation(); copyCode('${p.code}', this)">CODE: ${p.code}</span>` : `<span class="text-radar-green font-bold text-sm">${discount ? discount + '% OFF' : 'SALE'}</span>`}
                                 <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     View <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
                             </div>
                         </div>
                         
-                        <div class="lock-status absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <span class="text-radar-green/10 text-4xl font-loud tracking-widest uppercase transform -rotate-12 group-hover:text-radar-green/20">TARGET LOCKED</span>
-                        </div>
+                        <!-- Hover overlay removed for cleaner look -->
                     </a>
                 `;
             }).join('');
@@ -961,7 +963,7 @@
                             <a href="${linkUrl}" target="_blank" rel="noopener" class="font-loud text-xl text-white hover:text-radar-green transition-colors">${c.brand} <i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i></a>
                             <p class="text-gray-500 text-xs">${c.discount || 'Discount code'}${firstSeenText ? ` • ${firstSeenText}` : ''}</p>
                         </div>
-                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-mono text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
+                        <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-tech text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
                             ${c.code}
                         </div>
                     </div>
@@ -1021,11 +1023,11 @@
                 if (isNew) {
                     badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
                 } else if (discount) {
-                    badge = `<span class="text-radar-orange text-xs border border-radar-orange px-1">${discount}% OFF</span>`;
+                    badge = `<span class="text-radar-green text-xs border border-radar-green px-1">${discount}% OFF</span>`;
                 }
                 
                 return `
-                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-orange transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : ''}">
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-radar-green transition-colors duration-300 cursor-pointer overflow-hidden ${isNew ? 'border-radar-green' : ''}">
                         <div class="target-corner tl"></div>
                         <div class="target-corner tr"></div>
                         <div class="target-corner bl"></div>
@@ -1034,8 +1036,8 @@
                         <div class="p-5">
                             <div class="flex justify-between items-start mb-4 relative z-10">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 bg-radar-orange/20 rounded-sm flex items-center justify-center flex-shrink-0">
-                                        <i class="fas fa-tags text-radar-orange"></i>
+                                    <div class="w-10 h-10 bg-radar-green/20 rounded-sm flex items-center justify-center flex-shrink-0">
+                                        <i class="fas fa-tags text-radar-green"></i>
                                     </div>
                                     <div>
                                         <h4 class="font-loud text-2xl text-white leading-none">${c.brand}</h4>
@@ -1048,8 +1050,8 @@
                             <p class="text-gray-400 text-sm mb-4 line-clamp-2 relative z-10">${c.promo}</p>
                             
                             <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
-                                <span class="text-radar-orange font-bold text-sm">CLEARANCE${discount && !isNew ? ` • ${discount}% OFF` : ''}</span>
-                                <span class="text-white group-hover:text-radar-orange font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                <span class="text-radar-green font-bold text-sm">CLEARANCE${discount && !isNew ? ` • ${discount}% OFF` : ''}</span>
+                                <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     Shop <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
                             </div>
@@ -1190,8 +1192,8 @@
                 return `
                 <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 block">
                     <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 bg-radar-orange/20 rounded-full flex items-center justify-center">
-                            <i class="fas fa-envelope text-radar-orange"></i>
+                        <div class="w-10 h-10 bg-radar-green/20 rounded-full flex items-center justify-center">
+                            <i class="fas fa-envelope text-radar-green"></i>
                         </div>
                         <div class="flex-grow">
                             <h4 class="font-loud text-xl text-white">${o.brand}</h4>
@@ -1240,7 +1242,7 @@
                 
                 // Badge colors
                 const badgeColors = {
-                    'COLLAB': 'bg-radar-orange text-black',
+                    'COLLAB': 'bg-radar-green text-black',
                     'VALUE': 'bg-radar-green text-black',
                     'NEW': 'bg-blue-600 text-white',
                     "EDITOR'S PICK": 'bg-purple-600 text-white',
@@ -1341,6 +1343,25 @@
             if (!url) return '#';
             return `/go?url=${encodeURIComponent(url)}&brand=${encodeURIComponent(brand)}&source=${source}`;
         }
+        
+        // GA4 Click Tracking
+        document.addEventListener('click', function(e) {
+            const link = e.target.closest('a[href^="/go?"]');
+            if (link) {
+                const url = new URL(link.href, window.location.origin);
+                const brand = url.searchParams.get('brand') || 'Unknown';
+                const source = url.searchParams.get('source') || 'radar';
+                
+                // Send GA4 event
+                if (typeof gtag !== 'undefined') {
+                    gtag('event', 'deal_click', {
+                        'brand': brand,
+                        'source': source,
+                        'link_url': url.searchParams.get('url')
+                    });
+                }
+            }
+        });
         
         function formatFirstSeen(dateStr) {
             if (!dateStr) return '';
@@ -1502,7 +1523,7 @@
                     
                     // Toast
                     const notification = document.createElement('div');
-                    notification.className = 'fixed bottom-20 right-4 bg-radar-green text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(0,255,65,0.4)] z-[60] transform translate-y-20 transition-transform duration-300 border-l-4 border-white';
+                    notification.className = 'fixed bottom-20 right-4 bg-radar-green text-black font-loud text-xl px-6 py-3 shadow-[0_0_20px_rgba(255,255,255,0.4)] z-[60] transform translate-y-20 transition-transform duration-300 border-l-4 border-white';
                     notification.innerHTML = '<i class="fas fa-check-circle"></i> SCAN COMPLETE';
                     document.body.appendChild(notification);
                     
@@ -1529,8 +1550,8 @@
             
             if (cardsWithCodes.length > 0) {
                 const randomCard = cardsWithCodes[Math.floor(Math.random() * cardsWithCodes.length)];
-                randomCard.style.borderColor = '#00ff41';
-                randomCard.style.boxShadow = '0 0 20px rgba(0, 255, 65, 0.3)';
+                randomCard.style.borderColor = '#ffffff';
+                randomCard.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3)';
                 setTimeout(() => {
                     randomCard.style.borderColor = '';
                     randomCard.style.boxShadow = '';
