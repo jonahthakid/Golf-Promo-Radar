@@ -188,16 +188,19 @@
         </div>
 
         <!-- CTA Button -->
-        <a id="cta-link" href="#" target="_blank" rel="noopener" class="block bg-white text-black font-loud text-center py-3 tracking-wider hover:bg-gray-200 transition-colors border-2 border-black">
-            VIEW DEAL <i class="fas fa-arrow-right ml-1"></i>
+        <a id="cta-link" href="#" target="_blank" rel="noopener" class="block bg-gray-800 text-white font-loud text-sm text-center py-2 mx-3 mb-3 rounded-md tracking-wider hover:bg-gray-700 transition-colors">
+            VIEW DEAL <i class="fas fa-arrow-right ml-1 text-xs"></i>
         </a>
     </div>
     <!-- WIDGET END -->
 
     <script>
-        // CONFIG - Change this to your Railway URL
-        const API_URL = 'https://golf-promo-radar-production.up.railway.app/api/promos';
-        const RADAR_URL = 'https://golf-promo-radar-production.up.railway.app';
+        // CONFIG - Auto-detect: use relative URL on same domain, full URL when embedded elsewhere
+        const BASE_URL = window.location.hostname.includes('railway.app') || window.location.hostname.includes('skratch') 
+            ? '' 
+            : 'https://golf-promo-radar-production.up.railway.app';
+        const API_URL = BASE_URL + '/api/promos';
+        const RADAR_URL = BASE_URL || '/';
 
         // Elements
         const container = document.getElementById('deal-container');
@@ -219,8 +222,15 @@
         // =================================================================
         async function fetchDeals() {
             try {
+                console.log('Fetching from:', API_URL);
                 const response = await fetch(API_URL);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const data = await response.json();
+                console.log('Data received:', data);
                 
                 // Extract best deals
                 const deals = [];
@@ -237,6 +247,16 @@
                             code: p.code || null,
                             url: p.affiliate_url || p.url || RADAR_URL,
                             priority: parseInt(discount)
+                        });
+                    } else if (p.promo) {
+                        // Include deals without explicit % (e.g. "Free Shipping", "BOGO")
+                        deals.push({
+                            brand: p.brand.toUpperCase(),
+                            desc: truncate(p.promo, 60),
+                            discount: 'DEAL',
+                            code: p.code || null,
+                            url: p.affiliate_url || p.url || RADAR_URL,
+                            priority: 5
                         });
                     }
                 });
@@ -289,6 +309,8 @@
                 deals.sort((a, b) => b.priority - a.priority);
                 widgetDeals = deals.slice(0, 10);
                 
+                console.log('Processed deals:', deals.length);
+                
                 // Update count
                 countEl.textContent = deals.length;
                 
@@ -298,12 +320,19 @@
                 // Show first deal
                 if (widgetDeals.length > 0) {
                     showDeal(widgetDeals[0]);
+                } else {
+                    brandEl.textContent = 'NO DEALS';
+                    descEl.textContent = 'Check back soon';
+                    discountEl.textContent = '--';
                 }
                 
             } catch (error) {
                 console.error('Failed to fetch deals:', error);
                 brandEl.textContent = 'SIGNAL LOST';
-                descEl.textContent = 'Reconnecting...';
+                descEl.textContent = 'Check console for errors';
+                
+                // Retry after 5 seconds
+                setTimeout(fetchDeals, 5000);
             }
         }
 
