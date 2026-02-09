@@ -619,6 +619,30 @@ BRANDS = [
     {"name": "Sounder Golf", "url": "https://www.soundergolf.com", "category": "apparel", "tags": ["lifestyle", "modern", "impact"]},
     {"name": "Rapsodo", "url": "https://rapsodo.com", "category": "tech", "tags": ["launch-monitor", "simulator", "impact"]},
     {"name": "Five Iron Golf", "url": "https://fiveirongolf.com", "category": "experience", "tags": ["simulator", "urban", "impact"]},
+    # Tech / Rangefinders
+    {"name": "Bushnell Golf", "url": "https://www.bushnellgolf.com", "category": "tech", "tags": ["rangefinders", "gps"]},
+    {"name": "Blue Tees Golf", "url": "https://blueteesgolf.com", "category": "tech", "tags": ["rangefinders", "dtc"]},
+    {"name": "Garmin Golf", "url": "https://www.garmin.com/en-US/c/sports-fitness/golf/", "category": "tech", "tags": ["gps", "wearables"]},
+    {"name": "Precision Pro", "url": "https://precisionprogolf.com", "category": "tech", "tags": ["rangefinders", "dtc"]},
+    # DTC Club Brands
+    {"name": "Sub 70", "url": "https://www.golfsub70.com", "category": "oem", "tags": ["clubs", "dtc", "value"]},
+    {"name": "Stix Golf", "url": "https://stix.golf", "category": "oem", "tags": ["clubs", "dtc", "beginner"]},
+    {"name": "Haywood Golf", "url": "https://haywoodgolf.com", "category": "oem", "tags": ["clubs", "dtc", "canadian"]},
+    {"name": "New Level Golf", "url": "https://newlevelgolf.com", "category": "oem", "tags": ["clubs", "dtc", "custom"]},
+    {"name": "Takomo Golf", "url": "https://takomogolf.com", "category": "oem", "tags": ["clubs", "dtc", "value"]},
+    # Apparel - Media/Culture
+    {"name": "Good Good Golf", "url": "https://goodgood.com", "category": "apparel", "tags": ["youtube", "lifestyle"]},
+    {"name": "Barstool Fore Play", "url": "https://store.barstoolsports.com/collections/fore-play", "category": "apparel", "tags": ["media", "lifestyle"]},
+    {"name": "No Laying Up", "url": "https://nolayingup.com/collections/all", "category": "apparel", "tags": ["media", "lifestyle"]},
+    {"name": "Black Clover", "url": "https://www.blackclover.com", "category": "accessories", "tags": ["hats", "lucky"]},
+    {"name": "Waggle Golf", "url": "https://www.wagglegolf.com", "category": "apparel", "tags": ["fun", "casual"]},
+    {"name": "Straight Down", "url": "https://straightdown.com", "category": "apparel", "tags": ["classic", "resort"]},
+    # Balls
+    {"name": "Volvik", "url": "https://www.volvik.com", "category": "balls", "tags": ["balls", "colorful"]},
+    # Retailers
+    {"name": "Callaway Pre-Owned", "url": "https://www.callawaygolfpreowned.com", "category": "retailer", "tags": ["used", "certified"]},
+    {"name": "3balls", "url": "https://www.3balls.com", "category": "retailer", "tags": ["used", "value"]},
+    {"name": "Maple Hill Golf", "url": "https://maplehillgolf.com", "category": "retailer", "tags": ["shafts", "components"]},
 ]
 
 # Merge affiliate links into brands list
