@@ -643,6 +643,8 @@ BRANDS = [
     {"name": "Callaway Pre-Owned", "url": "https://www.callawaygolfpreowned.com", "category": "retailer", "tags": ["used", "certified"]},
     {"name": "3balls", "url": "https://www.3balls.com", "category": "retailer", "tags": ["used", "value"]},
     {"name": "Maple Hill Golf", "url": "https://maplehillgolf.com", "category": "retailer", "tags": ["shafts", "components"]},
+    # Pro Shop Holdings
+    {"name": "Sugarloaf Social Club", "url": "https://sugarloafsocialclub.com", "category": "apparel", "tags": ["lifestyle", "members", "pro-shop"]},
 ]
 
 # Merge affiliate links into brands list
