@@ -330,7 +330,7 @@
             </div>
 
             <!-- Stats HUD -->
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-4 gap-2">
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
                     <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Promos</div>
                     <div class="font-loud text-3xl text-white" id="stat-promos">0</div>
@@ -338,6 +338,10 @@
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
                     <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Clearance</div>
                     <div class="font-loud text-3xl text-radar-green" id="stat-clearance">0</div>
+                </div>
+                <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Drops</div>
+                    <div class="font-loud text-3xl text-cyan-400" id="stat-newdrops">0</div>
                 </div>
                 <div class="bg-radar-dark border border-radar-grid p-3 text-center rounded-sm">
                     <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</div>
@@ -407,6 +411,9 @@
                 </button>
                 <button onclick="switchTab('clearance')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="clearance">
                     CLEARANCE
+                </button>
+                <button onclick="switchTab('newdrops')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="newdrops">
+                    <i class="fas fa-fire mr-1 text-cyan-400"></i>NEW DROPS
                 </button>
                 <button onclick="switchTab('impact')" class="tab-btn px-4 py-2 font-loud text-lg tracking-wider border-b-2 border-transparent text-gray-500 hover:text-white" data-tab="impact">
                     <i class="fas fa-handshake mr-1"></i>PARTNER DEALS
@@ -517,7 +524,7 @@
         // =================================================================
         // STATE
         // =================================================================
-        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNukes: [], articles: [] };
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNukes: [], articles: [], newDrops: [] };
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -680,6 +687,7 @@
                 log(`PARSED ${data.promos?.length || 0} SIGNALS... OK`);
                 log(`CODES EXTRACTED: ${data.codes?.length || 0}`);
                 log(`CLEARANCE ITEMS: ${data.clearance?.length || 0}`);
+                log(`NEW DROPS: ${data.newDrops?.length || 0}`);
                 log(`PARTNER DEALS: ${data.impactDeals?.length || 0}`);
                 log(`EMAIL OFFERS: ${data.emailOffers?.length || 0}`);
                 
@@ -718,15 +726,21 @@
             const promos = promoData.promos?.filter(p => p.promo) || [];
             const emails = promoData.emailOffers || [];
             const clearance = promoData.clearance || [];
+            const newDrops = promoData.newDrops || [];
+            
+            // Count unique brands with new drops
+            const newDropBrands = new Set(newDrops.map(d => d.brand)).size;
             
             document.getElementById('stat-promos').textContent = promos.length;
             document.getElementById('stat-clearance').textContent = clearance.length;
+            document.getElementById('stat-newdrops').textContent = newDropBrands;
             document.getElementById('stat-email').textContent = emails.length;
             document.getElementById('target-count').textContent = promos.length.toString().padStart(3, '0');
 
             // Render current tab
             if (currentTab === 'promos') renderPromos();
             else if (currentTab === 'clearance') renderClearance();
+            else if (currentTab === 'newdrops') renderNewDrops();
             else if (currentTab === 'impact') renderImpactDeals();
             else if (currentTab === 'email') renderEmail();
             
@@ -1068,6 +1082,101 @@
                             <div class="flex justify-between items-center border-t border-gray-800 pt-3 relative z-10">
                                 <span class="text-radar-green font-bold text-sm">CLEARANCE${discount && !isNew ? ` • ${discount}% OFF` : ''}</span>
                                 <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                    Shop <i class="fas fa-chevron-right text-xs"></i>
+                                </span>
+                            </div>
+                        </div>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        // =================================================================
+        // RENDER NEW DROPS / NEW ARRIVALS
+        // =================================================================
+        function renderNewDrops() {
+            const grid = document.getElementById('deals-grid');
+            document.getElementById('featured-deal').className = 'hidden';
+            
+            let items = promoData.newDrops || [];
+            
+            // Group by brand and count
+            const brandCounts = {};
+            items.forEach(item => {
+                if (!brandCounts[item.brand]) {
+                    brandCounts[item.brand] = {
+                        brand: item.brand,
+                        count: 0,
+                        url: item.source_url || item.url,
+                        category: item.category,
+                        tags: item.tags || [],
+                        // Grab first product image as preview
+                        image: item.image
+                    };
+                }
+                brandCounts[item.brand].count++;
+                // Keep best image
+                if (item.image && !brandCounts[item.brand].image) {
+                    brandCounts[item.brand].image = item.image;
+                }
+            });
+            
+            let brands = Object.values(brandCounts);
+            
+            // Filter by category
+            if (currentFilter !== 'all') {
+                brands = brands.filter(b => b.category === currentFilter || b.tags?.includes(currentFilter));
+            }
+            
+            // Search filter
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                brands = brands.filter(b => b.brand?.toLowerCase().includes(q));
+            }
+            
+            // Sort by count (most new items first)
+            brands.sort((a, b) => b.count - a.count);
+
+            if (brands.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-2 text-center py-20 text-gray-600">
+                        <i class="fas fa-fire text-4xl mb-4 text-cyan-400"></i>
+                        <div class="font-loud text-2xl">NO NEW DROPS DETECTED</div>
+                        <div class="text-sm mt-2">New arrivals pages are scanned every 10 minutes</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = brands.map(b => {
+                const linkUrl = trackUrl(b.url, b.brand, 'newdrops');
+                
+                return `
+                    <a href="${linkUrl}" target="_blank" rel="noopener" class="deal-card block bg-radar-dark border border-radar-grid relative group hover:border-cyan-400 transition-colors duration-300 cursor-pointer overflow-hidden">
+                        <div class="target-corner tl"></div>
+                        <div class="target-corner tr"></div>
+                        <div class="target-corner bl"></div>
+                        <div class="target-corner br"></div>
+                        
+                        <div class="p-5 relative z-10">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-cyan-400/20 rounded-sm flex items-center justify-center flex-shrink-0">
+                                        <i class="fas fa-fire text-cyan-400"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-loud text-2xl text-white leading-none">${b.brand}</h4>
+                                        <span class="text-xs text-gray-500">${b.category?.toUpperCase() || 'NEW'}</span>
+                                    </div>
+                                </div>
+                                <span class="text-cyan-400 text-xs border border-cyan-400 px-2 py-0.5 font-bold">NEW</span>
+                            </div>
+                            
+                            <p class="text-white text-lg mb-4"><span class="text-cyan-400 font-bold">${b.count}</span> new ${b.count === 1 ? 'item' : 'items'} just dropped</p>
+                            
+                            <div class="flex justify-between items-center border-t border-gray-800 pt-3">
+                                <span class="text-cyan-400 font-bold text-sm">VIEW COLLECTION</span>
+                                <span class="text-white group-hover:text-cyan-400 font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     Shop <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
                             </div>
@@ -1463,6 +1572,7 @@
                 
                 if (currentTab === 'promos') renderPromos();
                 else if (currentTab === 'clearance') renderClearance();
+                else if (currentTab === 'newdrops') renderNewDrops();
                 else if (currentTab === 'impact') renderImpactDeals();
             });
         });
