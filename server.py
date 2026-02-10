@@ -8,6 +8,7 @@ Integrates with Impact Radius for affiliate tracking + deals
 import json
 import re
 import os
+import time
 import threading
 import requests
 import xml.etree.ElementTree as ET
@@ -649,6 +650,82 @@ BRANDS = [
 
 # Merge affiliate links into brands list
 BRANDS = merge_affiliate_links(BRANDS)
+
+# =============================================================================
+# NEW ARRIVALS / NEW DROPS URL PATTERNS
+# =============================================================================
+# Common URL patterns for "What's New" pages across golf brands
+NEW_ARRIVALS_PATTERNS = [
+    "/collections/new",
+    "/collections/new-arrivals",
+    "/collections/whats-new",
+    "/collections/just-dropped",
+    "/collections/new-releases",
+    "/new",
+    "/new-arrivals",
+    "/whats-new",
+    "/shop/new",
+    "/shop/new-arrivals",
+    "/c/new",
+    "/c/new-arrivals",
+]
+
+# Brands with known new arrivals pages (brand_name -> url)
+BRAND_NEW_ARRIVALS = {
+    # Lifestyle / Streetwear - most likely to have "new drops"
+    "Malbon Golf": "https://www.malbongolf.com/collections/new-arrivals",
+    "Eastside Golf": "https://www.eastsidegolf.com/collections/new-arrivals",
+    "Sunday Red": "https://www.sundayred.com/collections/new-arrivals",
+    "Bogey Boys": "https://bogeyboys.com/collections/new-arrivals",
+    "Metalwood Studio": "https://metalwoodstudio.com/collections/new-arrivals",
+    "Students Golf": "https://studentsgolf.com/collections/new",
+    "Random Golf Club": "https://randomgolfclub.com/collections/new-arrivals",
+    "Quiet Golf": "https://quietgolf.com/collections/new-arrivals",
+    "Whim Golf": "https://whimgolf.com/collections/all",
+    "Manors": "https://manorsgolf.com/collections/new-in",
+    "Good Good Golf": "https://goodgood.com/collections/new-arrivals",
+    
+    # Premium Apparel
+    "G/FORE": "https://www.gfore.com/collections/new-arrivals",
+    "Greyson Clothiers": "https://www.greysonclothiers.com/collections/new-arrivals",
+    "Peter Millar": "https://www.petermillar.com/new-arrivals/",
+    "TravisMathew": "https://www.travismathew.com/collections/new-arrivals",
+    "J.Lindeberg": "https://www.jlindeberg.com/us/new-arrivals",
+    "Holderness & Bourne": "https://www.holderness-bourne.com/collections/new-arrivals",
+    
+    # Mid-tier
+    "Rhoback": "https://rhoback.com/collections/new-arrivals",
+    "Swannies": "https://swannies.co/collections/new-arrivals",
+    "Bad Birdie": "https://badbirdie.com/collections/new-arrivals",
+    "Linksoul": "https://linksoul.com/collections/new-arrivals",
+    
+    # Footwear
+    "FootJoy": "https://www.footjoy.com/new-arrivals/",
+    "TRUE Linkswear": "https://truelinkswear.com/collections/new-arrivals",
+    "Cuater": "https://cuater.com/collections/new-arrivals",
+    "Duca del Cosma": "https://ducadelcosma.us/collections/new-arrivals",
+    
+    # Equipment OEMs
+    "Titleist": "https://www.titleist.com/new",
+    "TaylorMade": "https://www.taylormadegolf.com/new/",
+    "Callaway": "https://www.callawaygolf.com/new/",
+    "Cobra Golf": "https://www.cobragolf.com/collections/new",
+    "PING": "https://ping.com/en-us/shop/new",
+    "Cleveland Golf": "https://www.clevelandgolf.com/new/",
+    "Mizuno Golf": "https://mizunogolf.com/us/new-arrivals/",
+    "Srixon/Cleveland": "https://www.srixon.com/us/new-arrivals/",
+    
+    # Women's
+    "Foray Golf": "https://foraygolf.com/collections/new-arrivals",
+    "KINONA": "https://kinonasport.com/collections/new-arrivals",
+    "Daily Sports": "https://us.dailysports.com/collections/new-arrivals",
+    
+    # Tech
+    "Arccos Golf": "https://www.arccosgolf.com/collections/new",
+    
+    # Sugarloaf
+    "Sugarloaf Social Club": "https://sugarloafsocialclub.com/collections/new-arrivals",
+}
 
 # =============================================================================
 # IMPACT RADIUS API INTEGRATION
@@ -1919,13 +1996,25 @@ def run_scraper():
         print(f"⚠️  Impact deals fetch failed: {e}")
         impact_deals = []
     
+    # Scan for new drops / new arrivals
     print(f"\n{'='*60}")
-    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {error_count} errors")
+    print(f"🆕 Scanning new arrivals pages...")
+    print(f"{'='*60}")
+    
+    new_drops = []
+    try:
+        new_drops = scrape_all_new_arrivals()
+    except Exception as e:
+        print(f"⚠️  New arrivals scan failed: {e}")
+        new_drops = []
+    
+    print(f"\n{'='*60}")
+    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
     print(f"{'='*60}\n")
     
     # Always save main results even if clearance/impact fails
     if results:
-        save_data(results, clearance_results, impact_deals)
+        save_data(results, clearance_results, impact_deals, new_drops)
     
     return results
 
@@ -2164,7 +2253,160 @@ def scan_sale_pages(brands):
     return clearance
 
 
-def save_data(promos, clearance=None, impact_deals=None):
+# =============================================================================
+# NEW ARRIVALS / NEW DROPS SCRAPING
+# =============================================================================
+
+def scrape_new_arrivals_page(brand_name, new_arrivals_url):
+    """Scrape a new arrivals page for recently released products/collections"""
+    try:
+        response = requests.get(new_arrivals_url, headers=HEADERS, timeout=15, allow_redirects=True)
+        if response.status_code != 200:
+            return []
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Remove noise
+        for elem in soup.select('header, footer, nav, script, style, noscript, [class*="cookie"], [class*="popup"]'):
+            elem.decompose()
+        
+        products = []
+        
+        # Common product card selectors
+        product_selectors = [
+            '[class*="product-card"]',
+            '[class*="product-item"]',
+            '[class*="ProductCard"]',
+            '[class*="product-tile"]',
+            '[class*="grid-item"] a[href*="/products/"]',
+            '[data-product]',
+            '.product',
+            'article[class*="product"]',
+            '[class*="collection-product"]',
+        ]
+        
+        product_elements = []
+        for selector in product_selectors:
+            elements = soup.select(selector)
+            if elements:
+                product_elements = elements[:12]  # Max 12 products
+                break
+        
+        if not product_elements:
+            # Fallback: look for product links
+            product_elements = soup.select('a[href*="/products/"]')[:12]
+        
+        for elem in product_elements:
+            try:
+                # Get product name
+                name = None
+                name_selectors = [
+                    '[class*="product-title"]',
+                    '[class*="product-name"]',
+                    '[class*="ProductTitle"]',
+                    'h2', 'h3', 'h4',
+                    '[class*="title"]',
+                    '[class*="name"]',
+                ]
+                for sel in name_selectors:
+                    name_elem = elem.select_one(sel)
+                    if name_elem and name_elem.get_text(strip=True):
+                        name = name_elem.get_text(strip=True)
+                        break
+                
+                if not name:
+                    name = elem.get_text(strip=True)[:80]
+                
+                if not name or len(name) < 3:
+                    continue
+                
+                # Get product URL
+                product_url = None
+                if elem.name == 'a':
+                    product_url = elem.get('href', '')
+                else:
+                    link = elem.select_one('a[href*="/products/"], a[href*="/product/"]')
+                    if link:
+                        product_url = link.get('href', '')
+                
+                if product_url and not product_url.startswith('http'):
+                    base = urlparse(new_arrivals_url)
+                    product_url = f"{base.scheme}://{base.netloc}{product_url}"
+                
+                # Get product image
+                image = None
+                img = elem.select_one('img[src], img[data-src], img[data-lazy-src]')
+                if img:
+                    image = img.get('src') or img.get('data-src') or img.get('data-lazy-src')
+                    if image and not image.startswith('http'):
+                        base = urlparse(new_arrivals_url)
+                        image = f"{base.scheme}://{base.netloc}{image}"
+                
+                # Get price
+                price = None
+                price_selectors = [
+                    '[class*="price"]',
+                    '[class*="Price"]',
+                    'span[class*="money"]',
+                ]
+                for sel in price_selectors:
+                    price_elem = elem.select_one(sel)
+                    if price_elem:
+                        price_text = price_elem.get_text(strip=True)
+                        if '$' in price_text or '£' in price_text or '€' in price_text:
+                            price = price_text
+                            break
+                
+                # Filter out garbage
+                name_lower = name.lower()
+                if any(skip in name_lower for skip in ['cart', 'checkout', 'login', 'account', 'search', 'menu', 'filter', 'sort']):
+                    continue
+                
+                products.append({
+                    "name": name[:100],
+                    "url": product_url or new_arrivals_url,
+                    "image": image,
+                    "price": price,
+                    "brand": brand_name,
+                })
+            except:
+                continue
+        
+        return products
+    
+    except Exception as e:
+        print(f"  ⚠️  New arrivals scrape failed for {brand_name}: {e}")
+        return []
+
+
+def scrape_all_new_arrivals():
+    """Scrape new arrivals from all brands with known new arrivals pages"""
+    print(f"\n🆕 Scanning {len(BRAND_NEW_ARRIVALS)} brands for new drops...")
+    
+    all_new_drops = []
+    
+    for brand_name, new_arrivals_url in BRAND_NEW_ARRIVALS.items():
+        try:
+            time.sleep(0.3)  # Gentle rate limiting
+            products = scrape_new_arrivals_page(brand_name, new_arrivals_url)
+            
+            if products:
+                print(f"  🆕 {brand_name}: {len(products)} new products")
+                # Add source info
+                for p in products:
+                    p["source_url"] = new_arrivals_url
+                    p["category"] = next((b.get("category", "apparel") for b in BRANDS if b["name"] == brand_name), "apparel")
+                    p["tags"] = next((b.get("tags", []) for b in BRANDS if b["name"] == brand_name), [])
+                all_new_drops.extend(products)
+        except Exception as e:
+            print(f"  ⚠️  {brand_name}: {e}")
+            continue
+    
+    print(f"🆕 Found {len(all_new_drops)} total new products")
+    return all_new_drops
+
+
+def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     """Save scraped data to file with freshness tracking"""
     active_promos = [p for p in promos if p.get("promo")]
     
@@ -2225,6 +2467,7 @@ def save_data(promos, clearance=None, impact_deals=None):
         ],
         "clearance": fresh_clearance,
         "impactDeals": fresh_impact,
+        "newDrops": new_drops or [],  # New arrivals/releases
         "tacticalNukes": [],  # Will be populated below
         "articles": [],  # Will be populated below
         "communityIntel": []  # Will be populated below
@@ -2261,7 +2504,7 @@ def save_data(promos, clearance=None, impact_deals=None):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
     
-    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new)")
+    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new), {len(new_drops or [])} new drops")
 
 
 def load_data():
@@ -2281,6 +2524,8 @@ def load_data():
                     data["articles"] = []
                 if "communityIntel" not in data:
                     data["communityIntel"] = []
+                if "newDrops" not in data:
+                    data["newDrops"] = []
                 return data
         except:
             pass
@@ -2328,6 +2573,16 @@ def widget():
 @app.route('/api/promos')
 def get_promos():
     return jsonify(load_data())
+
+@app.route('/api/new-drops')
+def get_new_drops():
+    """Get new arrivals/drops data"""
+    data = load_data()
+    return jsonify({
+        "newDrops": data.get("newDrops", []),
+        "lastUpdated": data.get("lastUpdated"),
+        "count": len(data.get("newDrops", []))
+    })
 
 @app.route('/api/refresh', methods=['POST'])
 def trigger_refresh():
