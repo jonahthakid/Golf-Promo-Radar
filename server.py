@@ -9,15 +9,19 @@ import json
 import re
 import os
 import time
+import fcntl
+import random
 import threading
 import requests
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
 from flask import Flask, jsonify, send_from_directory, request, session, Response
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Base directory for serving static files
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -85,7 +89,7 @@ def fetch_rss_articles(max_per_feed=5):
                             article["preview"] = clean_desc[:120].strip() + "..." if len(clean_desc) > 120 else clean_desc.strip()
                         
                         all_articles.append(article)
-                except:
+                except Exception:
                     continue
                     
         except Exception as e:
@@ -199,7 +203,7 @@ def fetch_reddit_intel(limit=15):
 # IMPACT RADIUS CONFIG
 # =============================================================================
 IMPACT_ENABLED = os.environ.get("IMPACT_ENABLED", "true").lower() == "true"
-IMPACT_MEDIA_PARTNER_ID = os.environ.get("IMPACT_MEDIA_PARTNER_ID", "5770409")
+IMPACT_MEDIA_PARTNER_ID = os.environ.get("IMPACT_MEDIA_PARTNER_ID", "")
 IMPACT_ACCOUNT_SID = os.environ.get("IMPACT_ACCOUNT_SID", "")
 IMPACT_AUTH_TOKEN = os.environ.get("IMPACT_AUTH_TOKEN", "")
 
@@ -225,6 +229,33 @@ DEAL_STALE_DAYS = 7     # Flag deals running for this many days as "always on"
 
 
 # =============================================================================
+# ATOMIC FILE I/O (thread-safe)
+# =============================================================================
+def atomic_write_json(filepath, data):
+    """Write JSON atomically to prevent corruption from concurrent access"""
+    tmp = filepath + '.tmp'
+    with open(tmp, 'w') as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        json.dump(data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, filepath)  # atomic on Linux
+
+
+def safe_read_json(filepath, default=None):
+    """Read JSON with file locking"""
+    if not os.path.exists(filepath):
+        return default if default is not None else {}
+    try:
+        with open(filepath) as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"⚠️  Failed to read {filepath}: {e}")
+        return default if default is not None else {}
+
+
+# =============================================================================
 # DEAL FRESHNESS TRACKING
 # =============================================================================
 def get_deal_key(deal):
@@ -239,19 +270,12 @@ def get_deal_key(deal):
 
 def load_deal_history():
     """Load deal history from file"""
-    if os.path.exists(DEAL_HISTORY_FILE):
-        try:
-            with open(DEAL_HISTORY_FILE) as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
+    return safe_read_json(DEAL_HISTORY_FILE, {})
 
 
 def save_deal_history(history):
-    """Save deal history to file"""
-    with open(DEAL_HISTORY_FILE, "w") as f:
-        json.dump(history, f, indent=2)
+    """Save deal history to file (atomic)"""
+    atomic_write_json(DEAL_HISTORY_FILE, history)
 
 
 def parse_expiration_date(promo_text):
@@ -285,7 +309,7 @@ def parse_expiration_date(promo_text):
                 if exp_date < now and month < now.month:
                     exp_date = datetime(year + 1, month, day, 23, 59, 59)
                 return exp_date.isoformat()
-            except:
+            except Exception:
                 pass
     
     # Day-based patterns like "ends Sunday", "ends tomorrow"
@@ -372,7 +396,7 @@ def update_deal_history(deals, history):
             try:
                 exp_date = datetime.fromisoformat(expires)
                 is_expired = now > exp_date
-            except:
+            except Exception:
                 pass
         
         # Add freshness metadata to deal
@@ -744,10 +768,13 @@ class ImpactAPI:
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         })
-        # Cache
+        # Cache with TTL
         self._campaigns = None
+        self._campaigns_ts = 0
         self._ads = None
+        self._ads_ts = 0
         self._tracking_links = {}
+        self._cache_ttl = 3600  # 1 hour
     
     def _get(self, endpoint, params=None):
         """Make GET request to Impact API"""
@@ -761,18 +788,21 @@ class ImpactAPI:
             return None
     
     def get_campaigns(self, force_refresh=False):
-        """Get all active campaigns (cached)"""
-        if self._campaigns is None or force_refresh:
+        """Get all active campaigns (cached with TTL)"""
+        cache_expired = (time.time() - self._campaigns_ts) > self._cache_ttl
+        if self._campaigns is None or force_refresh or cache_expired:
             data = self._get("Campaigns", {"PageSize": 100})
             if data and "Campaigns" in data:
                 self._campaigns = data["Campaigns"]
             else:
                 self._campaigns = []
+            self._campaigns_ts = time.time()
         return self._campaigns
     
     def get_ads(self, force_refresh=False):
-        """Get all available ads/deals (cached)"""
-        if self._ads is None or force_refresh:
+        """Get all available ads/deals (cached with TTL)"""
+        cache_expired = (time.time() - self._ads_ts) > self._cache_ttl
+        if self._ads is None or force_refresh or cache_expired:
             all_ads = []
             page = 1
             while True:
@@ -785,6 +815,7 @@ class ImpactAPI:
                 else:
                     break
             self._ads = all_ads
+            self._ads_ts = time.time()
         return self._ads
     
     def get_catalog_items(self, campaign_id=None, max_items=50):
@@ -879,7 +910,7 @@ class ImpactAPI:
                             "description": item.get("Description", "")[:100] if item.get("Description") else "",
                             "category": item.get("Category", "")
                         })
-            except:
+            except Exception:
                 continue
         
         # Sort by discount and return top products
@@ -1118,8 +1149,27 @@ EMAIL_PATTERNS = [
     r'email.*?exclusive',
 ]
 
+USER_AGENTS = [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+]
+
+def get_headers():
+    """Return headers with a randomly rotated user agent"""
+    return {
+        'User-Agent': random.choice(USER_AGENTS),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+    }
+
+# Keep a static copy for non-scraping requests (RSS, Reddit, etc.)
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'User-Agent': USER_AGENTS[0],
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
     'Accept-Encoding': 'gzip, deflate',
@@ -1390,7 +1440,7 @@ def extract_popup_codes_from_scripts(soup):
             if code and code not in blacklist and len(code) >= 4 and code not in codes_found:
                 codes_found.append(code)
                 
-    except:
+    except Exception:
         pass
     
     return codes_found
@@ -1437,7 +1487,7 @@ def extract_image(soup, base_url):
                 src = normalize_url(src)
                 if src and 'data:image' not in src:
                     return src
-        except:
+        except Exception:
             pass
     
     # Priority 2: SVG logo in header (common pattern)
@@ -1454,7 +1504,7 @@ def extract_image(soup, base_url):
                 src = normalize_url(src)
                 if src:
                     return src
-    except:
+    except Exception:
         pass
     
     # Priority 3: Apple touch icon (usually a clean logo)
@@ -1501,10 +1551,10 @@ def scrape_brand(brand):
     }
     
     try:
-        response = requests.get(brand["url"], headers=HEADERS, timeout=15, allow_redirects=True)
+        response = requests.get(brand["url"], headers=get_headers(), timeout=15, allow_redirects=True)
         response.raise_for_status()
         
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, 'lxml')
         
         # Extract hero/product image BEFORE decomposing elements
         # Use manual logo_url override if provided (for retailers that show other brand logos)
@@ -1584,7 +1634,7 @@ def scrape_brand(brand):
                                             break
                                 if result.get("email_offer"):
                                     break
-            except:
+            except Exception:
                 pass
         
         # =================================================================
@@ -1630,9 +1680,9 @@ def scrape_brand(brand):
                                     else:
                                         result["promo"] = f"Use code {code} for discount"
                                 break
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
         
         # Also check meta tags and JSON-LD for promo info
@@ -1645,7 +1695,7 @@ def scrape_brand(brand):
                     match = re.search(r'(\d+%\s*off[^.]*)', desc, re.IGNORECASE)
                     if match and not result.get("email_offer"):
                         result["email_offer"] = clean_text(match.group(1), 80)
-        except:
+        except Exception:
             pass
         
         # =================================================================
@@ -1706,9 +1756,9 @@ def scrape_brand(brand):
                                         result["promo"] = clean_text(desc, 150)
                 except json.JSONDecodeError:
                     pass
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
         
         # =================================================================
@@ -1734,7 +1784,7 @@ def scrape_brand(brand):
                     if content and matches_promo(content) and not result.get("promo"):
                         result["promo"] = clean_text(content, 150)
                         break
-        except:
+        except Exception:
             pass
         
         # =================================================================
@@ -1750,7 +1800,7 @@ def scrape_brand(brand):
                     result["promo"] = f"Use code {popup_codes[0]} for discount"
                 if not result.get("email_offer"):
                     result["email_offer"] = f"Use code {popup_codes[0]} for first order discount"
-        except:
+        except Exception:
             pass
         
         # =================================================================
@@ -1799,9 +1849,9 @@ def scrape_brand(brand):
                                     break
                         if result.get("code"):
                             break
-                    except:
+                    except Exception:
                         pass
-            except:
+            except Exception:
                 pass
         
         # =================================================================
@@ -1824,7 +1874,7 @@ def scrape_brand(brand):
             try:
                 for el in soup.select(selector):
                     el.decompose()
-            except:
+            except Exception:
                 pass
         
         # Collect all candidate promo texts with scores
@@ -1864,7 +1914,7 @@ def scrape_brand(brand):
                             code = extract_code(text)
                             if code:
                                 result["code"] = code
-            except:
+            except Exception:
                 pass
         
         # Priority 2: Banner/hero sections
@@ -1888,7 +1938,7 @@ def scrape_brand(brand):
                     if text and matches_promo(text) and not is_junk_text(text):
                         score = score_promo_text(text)
                         candidates.append((text, score, 'banner'))
-            except:
+            except Exception:
                 pass
         
         # Priority 3: Look for specific promo text patterns anywhere
@@ -1928,7 +1978,7 @@ def scrape_brand(brand):
                                 break
                     if result.get("email_offer"):
                         break
-                except:
+                except Exception:
                     pass
                 
     except requests.exceptions.Timeout:
@@ -1954,21 +2004,27 @@ def run_scraper():
     success_count = 0
     error_count = 0
     
-    for i, brand in enumerate(BRANDS, 1):
-        print(f"  [{i}/{len(BRANDS)}] {brand['name']}...", end=" ", flush=True)
-        result = scrape_brand(brand)
-        
-        if result["error"]:
-            print(f"❌ {result['error'][:30]}")
-            error_count += 1
-        elif result["promo"]:
-            code_str = f" (code: {result['code']})" if result['code'] else ""
-            print(f"✓ Found promo{code_str}")
-            success_count += 1
-            results.append(result)
-        else:
-            print("○ No promo")
-            results.append(result)
+    # Concurrent brand scraping
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
+        for i, future in enumerate(as_completed(future_to_brand), 1):
+            brand = future_to_brand[future]
+            try:
+                result = future.result()
+                if result["error"]:
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
+                    error_count += 1
+                elif result["promo"]:
+                    code_str = f" (code: {result['code']})" if result['code'] else ""
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
+                    success_count += 1
+                    results.append(result)
+                else:
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
+                    results.append(result)
+            except Exception as e:
+                print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
+                error_count += 1
     
     # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
     print(f"\n{'='*60}")
@@ -2045,7 +2101,7 @@ def mine_sitemap_for_sale_urls(base_url, max_urls=5):
                 if response.status_code == 200 and '<?xml' in response.text[:100]:
                     sitemap_content = response.text
                     break
-            except:
+            except Exception:
                 continue
         
         if not sitemap_content:
@@ -2074,7 +2130,7 @@ def mine_sitemap_for_sale_urls(base_url, max_urls=5):
                                         url_text = loc.text.lower()
                                         if any(kw in url_text for kw in sale_keywords):
                                             found_urls.append(loc.text)
-                        except:
+                        except Exception:
                             continue
         
         # Also check direct URLs in sitemap
@@ -2124,7 +2180,7 @@ def get_sale_urls(base_url):
 def scrape_sale_page(brand, sale_url):
     """Scrape a sale page for banner/headline text"""
     try:
-        response = requests.get(sale_url, headers=HEADERS, timeout=10, allow_redirects=True)
+        response = requests.get(sale_url, headers=get_headers(), timeout=10, allow_redirects=True)
         
         # Check if page exists (not 404, not redirect to homepage)
         if response.status_code != 200:
@@ -2139,7 +2195,7 @@ def scrape_sale_page(brand, sale_url):
         if final_parsed.path in ['/', ''] and original_parsed.path not in ['/', '']:
             return None
             
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, 'lxml')
         
         # Look for sale banners/headlines
         sale_selectors = [
@@ -2170,7 +2226,7 @@ def scrape_sale_page(brand, sale_url):
                         if text.lower() not in ['sale', 'shop', 'products', 'all', 'collection']:
                             promo_text = text
                             break
-            except:
+            except Exception:
                 pass
         
         # Also look for discount text in the page
@@ -2218,37 +2274,44 @@ def scrape_sale_page(brand, sale_url):
                 "type": "clearance"
             }
             
-    except:
+    except Exception:
         pass
     
     return None
 
 
 def scan_sale_pages(brands):
-    """Scan sale pages for all brands"""
+    """Scan sale pages for all brands (concurrent)"""
     clearance = []
     
     # Skip these for sale page scanning - too noisy or structured differently
     skip_domains = ['amazon.com', 'golf.com/gear', 'dickssportinggoods.com', 'pgatoursuperstore.com', 'golfgalaxy.com']
     
-    for brand in brands:
-        # Skip big retailers
-        if any(domain in brand["url"] for domain in skip_domains):
-            continue
-        
-        # Get standard sale URLs + any found in sitemap
+    eligible_brands = [b for b in brands if not any(domain in b["url"] for domain in skip_domains)]
+    
+    def scan_brand_sales(brand):
+        """Scan sale pages for a single brand"""
         sale_urls = get_sale_urls(brand["url"])
         sitemap_urls = mine_sitemap_for_sale_urls(brand["url"], max_urls=3)
-        
-        # Combine and dedupe
         all_sale_urls = list(set(sale_urls + sitemap_urls))
         
-        for sale_url in all_sale_urls[:5]:  # Check up to 5 URLs per brand
+        for sale_url in all_sale_urls[:5]:
             result = scrape_sale_page(brand, sale_url)
             if result:
-                print(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
-                clearance.append(result)
-                break  # Found one, move to next brand
+                return result
+        return None
+    
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_brand = {executor.submit(scan_brand_sales, brand): brand for brand in eligible_brands}
+        for future in as_completed(future_to_brand):
+            brand = future_to_brand[future]
+            try:
+                result = future.result()
+                if result:
+                    print(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
+                    clearance.append(result)
+            except Exception as e:
+                print(f"  ⚠️  {brand['name']} sale scan error: {e}")
     
     return clearance
 
@@ -2260,11 +2323,11 @@ def scan_sale_pages(brands):
 def scrape_new_arrivals_page(brand_name, new_arrivals_url):
     """Scrape a new arrivals page for recently released products/collections"""
     try:
-        response = requests.get(new_arrivals_url, headers=HEADERS, timeout=15, allow_redirects=True)
+        response = requests.get(new_arrivals_url, headers=get_headers(), timeout=15, allow_redirects=True)
         if response.status_code != 200:
             return []
         
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, 'lxml')
         
         # Remove noise
         for elem in soup.select('header, footer, nav, script, style, noscript, [class*="cookie"], [class*="popup"]'):
@@ -2369,7 +2432,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
                     "price": price,
                     "brand": brand_name,
                 })
-            except:
+            except Exception:
                 continue
         
         return products
@@ -2380,27 +2443,30 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 
 
 def scrape_all_new_arrivals():
-    """Scrape new arrivals from all brands with known new arrivals pages"""
+    """Scrape new arrivals from all brands with known new arrivals pages (concurrent)"""
     print(f"\n🆕 Scanning {len(BRAND_NEW_ARRIVALS)} brands for new drops...")
     
     all_new_drops = []
     
-    for brand_name, new_arrivals_url in BRAND_NEW_ARRIVALS.items():
-        try:
-            time.sleep(0.3)  # Gentle rate limiting
-            products = scrape_new_arrivals_page(brand_name, new_arrivals_url)
-            
-            if products:
-                print(f"  🆕 {brand_name}: {len(products)} new products")
-                # Add source info
-                for p in products:
-                    p["source_url"] = new_arrivals_url
-                    p["category"] = next((b.get("category", "apparel") for b in BRANDS if b["name"] == brand_name), "apparel")
-                    p["tags"] = next((b.get("tags", []) for b in BRANDS if b["name"] == brand_name), [])
-                all_new_drops.extend(products)
-        except Exception as e:
-            print(f"  ⚠️  {brand_name}: {e}")
-            continue
+    def scrape_brand_arrivals(item):
+        brand_name, url = item
+        return brand_name, scrape_new_arrivals_page(brand_name, url)
+    
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(scrape_brand_arrivals, item): item for item in BRAND_NEW_ARRIVALS.items()}
+        for future in as_completed(futures):
+            try:
+                brand_name, products = future.result()
+                if products:
+                    print(f"  🆕 {brand_name}: {len(products)} new products")
+                    for p in products:
+                        p["source_url"] = BRAND_NEW_ARRIVALS[brand_name]
+                        p["category"] = next((b.get("category", "apparel") for b in BRANDS if b["name"] == brand_name), "apparel")
+                        p["tags"] = next((b.get("tags", []) for b in BRANDS if b["name"] == brand_name), [])
+                    all_new_drops.extend(products)
+            except Exception as e:
+                brand_name = futures[future][0]
+                print(f"  ⚠️  {brand_name}: {e}")
     
     print(f"🆕 Found {len(all_new_drops)} total new products")
     return all_new_drops
@@ -2501,36 +2567,14 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     except Exception as e:
         print(f"⚠️  Reddit fetch failed: {e}")
     
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+    atomic_write_json(DATA_FILE, data)
     
     print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new), {len(new_drops or [])} new drops")
 
 
 def load_data():
     """Load data from file or return defaults"""
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE) as f:
-                data = json.load(f)
-                # Ensure keys exist (for backward compatibility)
-                if "impactDeals" not in data:
-                    data["impactDeals"] = []
-                if "criticalHitIndex" not in data:
-                    data["criticalHitIndex"] = 0
-                if "tacticalNukes" not in data:
-                    data["tacticalNukes"] = []
-                if "articles" not in data:
-                    data["articles"] = []
-                if "communityIntel" not in data:
-                    data["communityIntel"] = []
-                if "newDrops" not in data:
-                    data["newDrops"] = []
-                return data
-        except:
-            pass
-    
-    return {
+    default = {
         "lastUpdated": datetime.now().isoformat(),
         "criticalHitIndex": 0,
         "promos": [],
@@ -2540,15 +2584,27 @@ def load_data():
         "impactDeals": [],
         "tacticalNukes": [],
         "articles": [],
-        "communityIntel": []
+        "communityIntel": [],
+        "newDrops": []
     }
+    
+    data = safe_read_json(DATA_FILE, default)
+    
+    # Ensure keys exist (backward compatibility)
+    for key in default:
+        if key not in data:
+            data[key] = default[key]
+    
+    return data
 
 
 # =============================================================================
 # FLASK APP
 # =============================================================================
 app = Flask(__name__, static_folder='.')
-app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
+app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production-set-SECRET_KEY-env-var")
+if app.secret_key == "change-me-in-production-set-SECRET_KEY-env-var":
+    print("⚠️  WARNING: Using default SECRET_KEY - set SECRET_KEY env var for persistent sessions")
 CORS(app)
 
 @app.route('/')
@@ -2556,9 +2612,15 @@ def index():
     return send_from_directory(BASE_DIR, 'golf_promo_radar.html')
 
 
-@app.route('/radar_logo.png')
+@app.route('/radar_logo.svg')
 def logo():
-    return send_from_directory(BASE_DIR, 'radar_logo.png')
+    return send_from_directory(BASE_DIR, 'Radar_Logo.svg')
+
+
+# Keep old PNG route as redirect in case anything still references it
+@app.route('/radar_logo.png')
+def logo_legacy():
+    return send_from_directory(BASE_DIR, 'Radar_Logo.svg', mimetype='image/svg+xml')
 
 
 @app.route('/preview')
@@ -2591,6 +2653,8 @@ def get_new_drops():
 
 @app.route('/api/refresh', methods=['POST'])
 def trigger_refresh():
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
     thread = threading.Thread(target=run_scraper)
     thread.start()
     return jsonify({"status": "refresh_started", "brand_count": len(BRANDS)})
@@ -2612,13 +2676,7 @@ CLICKS_FILE = "clicks.json"
 
 def load_clicks():
     """Load click tracking data"""
-    if os.path.exists(CLICKS_FILE):
-        try:
-            with open(CLICKS_FILE) as f:
-                return json.load(f)
-        except:
-            pass
-    return {"clicks": [], "stats": {"total": 0, "by_brand": {}, "by_date": {}}}
+    return safe_read_json(CLICKS_FILE, {"clicks": [], "stats": {"total": 0, "by_brand": {}, "by_date": {}}})
 
 def save_click(brand, url, source="radar"):
     """Save a click event"""
@@ -2644,6 +2702,7 @@ def save_click(brand, url, source="radar"):
     data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
     
     with open(CLICKS_FILE, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f)
     
     return data["stats"]["total"]
@@ -2684,7 +2743,7 @@ def track_click():
                 brand_parsed = urlparse(b.get('url', ''))
                 if brand_parsed.netloc:
                     known_domains.add(brand_parsed.netloc.lower().replace('www.', ''))
-            except:
+            except Exception:
                 pass
         
         # Add common affiliate domains
@@ -2868,18 +2927,17 @@ def embed_demo():
 
 
 # =============================================================================
-# SEO LANDING PAGES
+# SEO LANDING PAGES (uncomment when deals_index.html and brand_deals.html exist)
 # =============================================================================
-@app.route('/deals')
-def deals_index():
-    """SEO index page listing all brands"""
-    return send_from_directory(BASE_DIR, 'deals_index.html')
-
-
-@app.route('/deals/<brand_slug>')
-def brand_deals_page(brand_slug):
-    """SEO landing page for specific brand deals"""
-    return send_from_directory(BASE_DIR, 'brand_deals.html')
+# @app.route('/deals')
+# def deals_index():
+#     """SEO index page listing all brands"""
+#     return send_from_directory(BASE_DIR, 'deals_index.html')
+#
+# @app.route('/deals/<brand_slug>')
+# def brand_deals_page(brand_slug):
+#     """SEO landing page for specific brand deals"""
+#     return send_from_directory(BASE_DIR, 'brand_deals.html')
 
 
 @app.route('/api/brands')
@@ -2970,7 +3028,7 @@ def get_deal_history():
                 first = datetime.fromisoformat(item["first_seen"])
                 last = datetime.fromisoformat(item["last_seen"])
                 item["days_active"] = (last - first).days + 1
-            except:
+            except Exception:
                 pass
     
     # Sort by first_seen descending (newest first)
@@ -2995,20 +3053,23 @@ def get_deal_history():
 # ADMIN DASHBOARD ROUTES
 # =============================================================================
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
-if not ADMIN_PASSWORD:
+ADMIN_PASSWORD_HASH = None
+if ADMIN_PASSWORD:
+    ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
+else:
     print("⚠️  WARNING: ADMIN_PASSWORD not set - admin routes will be inaccessible")
 
 def check_admin_auth():
     """Check if request has valid admin auth"""
     # Fail if no password configured
-    if not ADMIN_PASSWORD:
+    if not ADMIN_PASSWORD_HASH:
         return False
     # Check session
     if session.get('admin_authenticated'):
         return True
     # Check header (for API calls)
     auth_header = request.headers.get('X-Admin-Password')
-    if auth_header and auth_header == ADMIN_PASSWORD:
+    if auth_header and check_password_hash(ADMIN_PASSWORD_HASH, auth_header):
         return True
     return False
 
@@ -3029,13 +3090,13 @@ def admin_timeline():
 
 @app.route('/admin/login', methods=['POST'])
 def admin_login():
-    if not ADMIN_PASSWORD:
+    if not ADMIN_PASSWORD_HASH:
         return jsonify({"success": False, "error": "Admin not configured"}), 503
     
     data = request.get_json() or {}
     password = data.get('password', '')
     
-    if password and password == ADMIN_PASSWORD:
+    if password and check_password_hash(ADMIN_PASSWORD_HASH, password):
         session['admin_authenticated'] = True
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Invalid password"}), 401
@@ -3127,6 +3188,8 @@ def radar_stats():
 @app.route('/api/debug/catalog')
 def debug_catalog():
     """Debug endpoint to see Impact catalog data"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
     if not impact_api:
         return jsonify({"error": "Impact API not initialized"})
     
