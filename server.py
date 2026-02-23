@@ -2740,6 +2740,14 @@ def classic():
 def widget():
     return send_from_directory(BASE_DIR, 'widget.html')
 
+@app.route('/privacy')
+def privacy():
+    return send_from_directory(BASE_DIR, 'privacy.html')
+
+@app.route('/terms')
+def terms():
+    return send_from_directory(BASE_DIR, 'terms.html')
+
 @app.route('/api/promos')
 def get_promos():
     return jsonify(load_data())
