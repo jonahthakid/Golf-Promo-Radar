@@ -12,6 +12,7 @@ import time
 import fcntl
 import random
 import threading
+import warnings
 import requests
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,8 +21,10 @@ from urllib.parse import urlparse, urljoin
 from flask import Flask, jsonify, send_from_directory, request, session, Response
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from werkzeug.security import generate_password_hash, check_password_hash
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # Base directory for serving static files
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -221,6 +224,7 @@ except ImportError:
 REFRESH_INTERVAL_MINUTES = 10
 DATA_FILE = "promo_data.json"
 DEAL_HISTORY_FILE = "deal_history.json"
+DROPS_HISTORY_FILE = "drops_history.json"
 PORT = int(os.environ.get("PORT", 5000))
 
 # Freshness settings
@@ -429,6 +433,96 @@ def update_deal_history(deals, history):
         print(f"🧹 Cleaned up {len(expired_keys)} stale deals from history")
     
     return history, fresh_deals
+
+# =============================================================================
+# DROPS FRESHNESS TRACKING
+# =============================================================================
+DROPS_EXPIRE_DAYS = 14  # Remove drops not seen in this many days
+DROPS_NEW_HOURS = 48    # Consider a drop "new" for 48 hours
+
+def get_drop_key(drop):
+    """Generate unique key for a drop based on brand + product name"""
+    brand = drop.get("brand", "").lower().strip()
+    name = drop.get("name", "").lower().strip()
+    # Normalize whitespace and take first 80 chars
+    name_normalized = re.sub(r'\s+', ' ', name)[:80]
+    return f"drop:{brand}:{name_normalized}"
+
+
+def load_drops_history():
+    """Load drops history from file"""
+    return safe_read_json(DROPS_HISTORY_FILE, {})
+
+
+def save_drops_history(history):
+    """Save drops history to file (atomic)"""
+    atomic_write_json(DROPS_HISTORY_FILE, history)
+
+
+def update_drops_history(drops, history):
+    """
+    Track drops over time. Returns (updated_history, enriched_drops)
+    where enriched_drops have freshness metadata.
+    """
+    now = datetime.now()
+    now_iso = now.isoformat()
+    seen_keys = set()
+    enriched = []
+
+    for drop in drops:
+        key = get_drop_key(drop)
+        seen_keys.add(key)
+
+        if key in history:
+            # Seen before — update last_seen
+            history[key]["last_seen"] = now_iso
+            history[key]["times_seen"] = history[key].get("times_seen", 1) + 1
+            first_seen = datetime.fromisoformat(history[key]["first_seen"])
+        else:
+            # Brand new drop
+            history[key] = {
+                "first_seen": now_iso,
+                "last_seen": now_iso,
+                "times_seen": 1,
+                "brand": drop.get("brand"),
+                "name": drop.get("name", "")[:80]
+            }
+            first_seen = now
+
+        drop_age_hours = (now - first_seen).total_seconds() / 3600
+
+        enriched_drop = drop.copy()
+        enriched_drop["first_seen"] = history[key]["first_seen"]
+        enriched_drop["last_seen"] = history[key]["last_seen"]
+        enriched_drop["times_seen"] = history[key]["times_seen"]
+        enriched_drop["is_new"] = drop_age_hours < DROPS_NEW_HOURS
+        enriched_drop["drop_age_hours"] = round(drop_age_hours, 1)
+        enriched.append(enriched_drop)
+
+    # Clean out drops not seen in DROPS_EXPIRE_DAYS
+    expired_keys = []
+    for key, data in history.items():
+        if not key.startswith("drop:"):
+            continue
+        if key not in seen_keys:
+            last_seen = datetime.fromisoformat(data["last_seen"])
+            days_since = (now - last_seen).total_seconds() / 86400
+            if days_since > DROPS_EXPIRE_DAYS:
+                expired_keys.append(key)
+
+    for key in expired_keys:
+        del history[key]
+
+    if expired_keys:
+        print(f"🧹 Cleaned up {len(expired_keys)} stale drops from history")
+
+    # Sort: new drops first, then by recency within each group
+    enriched.sort(key=lambda x: (
+        0 if x.get("is_new") else 1,
+        x.get("drop_age_hours", 9999)
+    ))
+
+    return history, enriched
 
 # =============================================================================
 # FULL BRAND LIST - 170+ Golf Brands
@@ -1551,7 +1645,7 @@ def scrape_brand(brand):
     }
     
     try:
-        response = requests.get(brand["url"], headers=get_headers(), timeout=15, allow_redirects=True)
+        response = requests.get(brand["url"], headers=get_headers(), timeout=8, allow_redirects=True)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'lxml')
@@ -2005,7 +2099,7 @@ def run_scraper():
     error_count = 0
     
     # Concurrent brand scraping
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
         for i, future in enumerate(as_completed(future_to_brand), 1):
             brand = future_to_brand[future]
@@ -2097,7 +2191,7 @@ def mine_sitemap_for_sale_urls(base_url, max_urls=5):
         sitemap_content = None
         for sitemap_url in sitemap_urls:
             try:
-                response = requests.get(sitemap_url, headers=HEADERS, timeout=10)
+                response = requests.get(sitemap_url, headers=HEADERS, timeout=5)
                 if response.status_code == 200 and '<?xml' in response.text[:100]:
                     sitemap_content = response.text
                     break
@@ -2121,7 +2215,7 @@ def mine_sitemap_for_sale_urls(base_url, max_urls=5):
                     # Look for collection or page sitemaps
                     if any(x in sitemap_child_url.lower() for x in ['collection', 'page', 'categor']):
                         try:
-                            child_response = requests.get(sitemap_child_url, headers=HEADERS, timeout=10)
+                            child_response = requests.get(sitemap_child_url, headers=HEADERS, timeout=5)
                             if child_response.status_code == 200:
                                 child_soup = BeautifulSoup(child_response.text, 'xml')
                                 for url_tag in child_soup.find_all('url'):
@@ -2301,7 +2395,7 @@ def scan_sale_pages(brands):
                 return result
         return None
     
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=15) as executor:
         future_to_brand = {executor.submit(scan_brand_sales, brand): brand for brand in eligible_brands}
         for future in as_completed(future_to_brand):
             brand = future_to_brand[future]
@@ -2323,7 +2417,7 @@ def scan_sale_pages(brands):
 def scrape_new_arrivals_page(brand_name, new_arrivals_url):
     """Scrape a new arrivals page for recently released products/collections"""
     try:
-        response = requests.get(new_arrivals_url, headers=get_headers(), timeout=15, allow_redirects=True)
+        response = requests.get(new_arrivals_url, headers=get_headers(), timeout=8, allow_redirects=True)
         if response.status_code != 200:
             return []
         
@@ -2452,7 +2546,7 @@ def scrape_all_new_arrivals():
         brand_name, url = item
         return brand_name, scrape_new_arrivals_page(brand_name, url)
     
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=15) as executor:
         futures = {executor.submit(scrape_brand_arrivals, item): item for item in BRAND_NEW_ARRIVALS.items()}
         for future in as_completed(futures):
             try:
@@ -2495,6 +2589,15 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     # Save updated history
     save_deal_history(history)
     
+    # Process drops freshness
+    fresh_drops = []
+    new_drops_count = 0
+    if new_drops:
+        drops_history = load_drops_history()
+        drops_history, fresh_drops = update_drops_history(new_drops, drops_history)
+        save_drops_history(drops_history)
+        new_drops_count = sum(1 for d in fresh_drops if d.get("is_new"))
+    
     # Get current critical hit index and increment
     current_data = load_data()
     critical_hit_index = current_data.get("criticalHitIndex", 0) + 1
@@ -2533,7 +2636,7 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         ],
         "clearance": fresh_clearance,
         "impactDeals": fresh_impact,
-        "newDrops": new_drops or [],  # New arrivals/releases
+        "newDrops": fresh_drops,  # New arrivals/releases with freshness tracking
         "tacticalNukes": [],  # Will be populated below
         "articles": [],  # Will be populated below
         "communityIntel": []  # Will be populated below
@@ -2569,7 +2672,7 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     
     atomic_write_json(DATA_FILE, data)
     
-    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new), {len(new_drops or [])} new drops")
+    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new), {len(fresh_drops)} drops ({new_drops_count} new)")
 
 
 def load_data():
@@ -2614,13 +2717,13 @@ def index():
 
 @app.route('/radar_logo.svg')
 def logo():
-    return send_from_directory(BASE_DIR, 'Radar_Logo.svg')
+    return send_from_directory(BASE_DIR, 'radar_logo.svg')
 
 
 # Keep old PNG route as redirect in case anything still references it
 @app.route('/radar_logo.png')
 def logo_legacy():
-    return send_from_directory(BASE_DIR, 'Radar_Logo.svg', mimetype='image/svg+xml')
+    return send_from_directory(BASE_DIR, 'radar_logo.svg', mimetype='image/svg+xml')
 
 
 @app.route('/preview')
@@ -2643,12 +2746,15 @@ def get_promos():
 
 @app.route('/api/new-drops')
 def get_new_drops():
-    """Get new arrivals/drops data"""
+    """Get new arrivals/drops data with freshness info"""
     data = load_data()
+    drops = data.get("newDrops", [])
+    new_count = sum(1 for d in drops if d.get("is_new"))
     return jsonify({
-        "newDrops": data.get("newDrops", []),
+        "newDrops": drops,
         "lastUpdated": data.get("lastUpdated"),
-        "count": len(data.get("newDrops", []))
+        "count": len(drops),
+        "newCount": new_count
     })
 
 @app.route('/api/refresh', methods=['POST'])
