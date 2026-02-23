@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SKRATCH RADAR - Golf Promo Scraper Backend
+GOLF RADAR - Golf Promo Scraper Backend
 Scans 170+ golf brands for promos, codes, and email offers
 Integrates with Impact Radius for affiliate tracking + deals
 """
@@ -113,7 +113,7 @@ def fetch_reddit_intel(limit=15):
     
     for source in REDDIT_URLS:
         try:
-            headers = {'User-Agent': 'SkratchRadar/1.0 (golf deal aggregator)'}
+            headers = {'User-Agent': 'GolfRadar/1.0 (golf deal aggregator)'}
             resp = requests.get(source["url"], headers=headers, timeout=10)
             
             if resp.status_code == 429:
@@ -1944,7 +1944,7 @@ def scrape_brand(brand):
 def run_scraper():
     """Run full scrape of all brands"""
     print(f"\n{'='*60}")
-    print(f"🔄 SKRATCH RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"📡 Scanning {len(BRANDS)} brands...")
     print(f"{'='*60}")
     
@@ -2556,6 +2556,11 @@ def index():
     return send_from_directory(BASE_DIR, 'golf_promo_radar.html')
 
 
+@app.route('/radar_logo.png')
+def logo():
+    return send_from_directory(BASE_DIR, 'radar_logo.png')
+
+
 @app.route('/preview')
 def preview():
     return send_from_directory(BASE_DIR, 'golf_promo_radar_preview.html')
@@ -2759,10 +2764,10 @@ def get_clicks():
 # =============================================================================
 @app.route('/embed.js')
 def embed_js():
-    """Embeddable widget script for Skratch/GolfWRX articles"""
+    """Embeddable widget script for editorial articles"""
     js = '''
 (function() {
-    const container = document.getElementById('skratch-radar-widget');
+    const container = document.getElementById('golf-radar-widget');
     if (!container) return;
     
     const style = document.createElement('style');
@@ -2838,7 +2843,7 @@ def embed_demo():
     return f'''<!DOCTYPE html>
 <html>
 <head>
-    <title>Skratch Radar - Embed Widget</title>
+    <title>Golf Radar - Embed Widget</title>
     <style>
         body {{ font-family: -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }}
         h1 {{ color: #333; }}
@@ -2848,14 +2853,14 @@ def embed_demo():
 </head>
 <body>
     <h1>Embed Golf Deals Radar</h1>
-    <p>Add this widget to any Skratch or GolfWRX article:</p>
+    <p>Add this widget to any article:</p>
     
-    <pre>&lt;div id="skratch-radar-widget"&gt;&lt;/div&gt;
+    <pre>&lt;div id="golf-radar-widget"&gt;&lt;/div&gt;
 &lt;script src="{base_url}/embed.js"&gt;&lt;/script&gt;</pre>
     
     <h2>Live Preview:</h2>
     <div class="demo">
-        <div id="skratch-radar-widget"></div>
+        <div id="golf-radar-widget"></div>
         <script src="{base_url}/embed.js"></script>
     </div>
 </body>
@@ -3165,7 +3170,7 @@ def debug_catalog():
 # =============================================================================
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("⛳ SKRATCH RADAR - Golf Promo Intelligence")
+    print("⛳ GOLF RADAR - Golf Promo Intelligence")
     print(f"📡 Monitoring {len(BRANDS)} brands")
     print("="*60)
     
