@@ -152,16 +152,7 @@
             overflow: hidden;
         }
         
-        /* Vertical text for sidebar toggle */
-        .writing-vertical {
-            writing-mode: vertical-rl;
-            text-orientation: mixed;
-        }
-        
-        /* Sidebar open state */
-        #intel-sidebar.open {
-            transform: translateX(0);
-        }
+        /* Reserved */
 
         /* New code highlight - pulsing red/white border */
         .new-code-highlight {
@@ -269,6 +260,14 @@
         </div>
     </header>
 
+    <!-- Legal Disclosure -->
+    <div class="bg-radar-dark border-b border-radar-grid relative z-10">
+        <div class="container mx-auto px-4 py-2.5 text-[11px] text-gray-500 leading-relaxed">
+            <i class="fas fa-info-circle text-gray-600 mr-1"></i>
+            Offers are sourced from publicly available promotions and subject to change. Radar does not operate any offers or endorse any products. Radar may receive affiliate commissions when you click on offers and purchase products.
+        </div>
+    </div>
+
     <!-- Main Content -->
     <main class="flex-grow container mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
         
@@ -278,7 +277,7 @@
             <!-- Radar Visualization Panel -->
             <div id="radar-panel" class="bg-radar-dark border border-radar-grid p-6 relative overflow-hidden rounded-sm group">
                 <div class="absolute top-2 left-2 text-xs text-radar-greenDim">SYS.MONITORING</div>
-                <div class="absolute top-2 right-2 text-xs text-radar-red animate-pulse-fast">LIVE INTEL</div>
+                <div class="absolute top-2 right-2 text-xs text-radar-green animate-pulse-fast">SCANNING</div>
                 
                 <!-- The Radar Circle -->
                 <div class="relative w-64 h-64 mx-auto my-4 border border-radar-greenDim rounded-full bg-radar-black shadow-[0_0_20px_rgba(255,255,255,0.1)]" id="radar-circle">
@@ -449,47 +448,14 @@
         </section>
     </main>
 
-    <!-- Intel Feed Sidebar - Collapsible -->
-    <div id="intel-sidebar" class="fixed top-0 right-0 h-full w-80 bg-radar-black border-l border-radar-grid transform translate-x-full transition-transform duration-300 z-50 flex flex-col">
-        <!-- Header -->
-        <div class="p-4 border-b border-radar-grid flex items-center justify-between">
-            <h3 class="font-loud text-lg text-white tracking-wider">
-                <i class="fas fa-satellite-dish text-radar-green mr-2"></i>INTEL FEED
-            </h3>
-            <button onclick="toggleIntelFeed()" class="text-gray-500 hover:text-white transition-colors">
-                <i class="fas fa-times text-lg"></i>
-            </button>
-        </div>
-        
-        <!-- Articles -->
-        <div id="articles-list" class="flex-1 overflow-y-auto p-4 space-y-3">
-            <!-- Articles populated by JS -->
-        </div>
-        
-        <!-- Footer -->
-        <div class="p-3 border-t border-radar-grid text-center">
-            <span class="text-gray-600 text-xs font-tech">FROM THE NETWORK</span>
-        </div>
-    </div>
-    
-    <!-- Intel Feed Toggle Button -->
-    <button id="intel-toggle" onclick="toggleIntelFeed()" 
-            class="fixed right-0 top-1/2 -translate-y-1/2 bg-radar-dark border border-radar-grid border-r-0 rounded-l-lg px-2 py-4 z-40 hover:bg-radar-green hover:text-black transition-all group hidden">
-        <div class="flex flex-col items-center gap-2">
-            <i class="fas fa-newspaper text-radar-green group-hover:text-black"></i>
-            <span class="font-loud text-xs tracking-widest writing-vertical text-white group-hover:text-black">INTEL</span>
-            <span id="intel-count" class="bg-radar-green text-black text-xs font-bold px-1.5 py-0.5 rounded">0</span>
-        </div>
-    </button>
-
-    <!-- Intel Marquee - Fixed at bottom -->
+    <!-- Deal Marquee - Fixed at bottom -->
     <div class="fixed bottom-0 left-0 right-0 bg-radar-green text-black font-loud text-xl py-1 overflow-hidden whitespace-nowrap border-t border-b border-black z-[60]">
         <div class="marquee-track flex" id="marquee-track">
             <div class="marquee-content flex-shrink-0 px-4" id="marquee-text">
-                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+                SCANNING FOR DEALS ... UPDATING LIVE ...
             </div>
             <div class="marquee-content flex-shrink-0 px-4" id="marquee-text-2">
-                SCANNING FOR DEALS ... STAND BY FOR INTEL ...
+                SCANNING FOR DEALS ... UPDATING LIVE ...
             </div>
         </div>
     </div>
@@ -504,14 +470,14 @@
                 Scanning 170+ Brand Homepages • Auto-Updating Every 10 Mins
             </p>
             <p class="text-gray-700 text-[10px] max-w-md mx-auto mb-3">
-                Affiliate Disclosure: Some links on this site are affiliate links. We may earn a commission if you make a purchase, at no additional cost to you.
+                Offers are sourced from publicly available promotions and subject to change. Radar does not operate any offers or endorse any products. Radar may receive affiliate commissions when you click on offers and purchase products.
             </p>
             <div class="flex items-center justify-center gap-4 text-gray-600 text-[10px]">
                 <a href="/privacy" class="hover:text-white transition-colors">Privacy Policy</a>
                 <span>•</span>
                 <a href="/terms" class="hover:text-white transition-colors">Terms of Service</a>
                 <span>•</span>
-                <span>&copy; 2026 Skratch Golf / Pro Shop Holdings</span>
+                <span>&copy; 2026 Skratch Media, LLC</span>
             </div>
         </div>
     </footer>
@@ -520,7 +486,7 @@
         // =================================================================
         // STATE
         // =================================================================
-        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNukes: [], articles: [], newDrops: [] };
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNukes: [], newDrops: [] };
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -693,7 +659,7 @@
                 
                 const feedStatus = document.getElementById('feed-status');
                 if (feedStatus) {
-                    feedStatus.textContent = 'LIVE INTEL';
+                    feedStatus.textContent = 'LIVE FEED';
                     feedStatus.classList.remove('text-radar-red');
                     feedStatus.classList.add('text-radar-green');
                 }
@@ -739,9 +705,6 @@
             else if (currentTab === 'newdrops') renderNewDrops();
             else if (currentTab === 'impact') renderImpactDeals();
             else if (currentTab === 'email') renderEmail();
-            
-            // Always render articles
-            renderArticles();
         }
 
         // =================================================================
@@ -820,7 +783,6 @@
                     
                     const rawUrl = top.affiliate_url || top.url;
                     const linkUrl = trackUrl(rawUrl, top.brand, 'critical-hit');
-                    const hasLogo = top.image && !top.image.includes('data:');
                     featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
                     featured.innerHTML = `
                         <div class="target-corner tl border-radar-red"></div>
@@ -830,10 +792,7 @@
                         <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
                         <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
                             <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
-                                ${hasLogo 
-                                    ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
-                                    : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
-                                }
+                                `<span class="font-loud text-xl text-black">${top.brand?.substring(0,2).toUpperCase() || "??"}</span>`
                             </div>
                             <div class="flex-grow">
                                 <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
@@ -881,7 +840,6 @@
                 const icon = getCategoryIcon(p.category);
                 const rawUrl = p.affiliate_url || p.url;
                 const linkUrl = trackUrl(rawUrl, p.brand, 'promos');
-                const hasLogo = p.image && !p.image.includes('data:');
                 
                 // Badge logic: NEW > HOT > ALWAYS ON
                 let badge = '';
@@ -920,10 +878,7 @@
                             <div class="flex justify-between items-start mb-4 relative z-10">
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 bg-white rounded-sm flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                        ${hasLogo 
-                                            ? `<img src="${p.image}" alt="${p.brand}" class="w-full h-full object-contain p-1" onerror="this.parentElement.innerHTML='<i class=\\'fas ${icon} text-black\\'></i>'">`
-                                            : `<i class="fas ${icon} text-black"></i>`
-                                        }
+                                        `<span class="font-loud text-sm text-black">${p.brand?.substring(0,2).toUpperCase() || "??"}</span>`
                                     </div>
                                     <div>
                                         <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
@@ -1406,55 +1361,6 @@
         function toggleTacticalNukes() {
             tacticalNukesExpanded = !tacticalNukesExpanded;
             renderTacticalNukes();
-        }
-
-        // =================================================================
-        // RENDER ARTICLES (Sidebar)
-        // =================================================================
-        function renderArticles() {
-            const toggle = document.getElementById('intel-toggle');
-            const list = document.getElementById('articles-list');
-            const count = document.getElementById('intel-count');
-            
-            const articles = promoData.articles || [];
-            
-            if (articles.length === 0) {
-                toggle.classList.add('hidden');
-                return;
-            }
-            
-            toggle.classList.remove('hidden');
-            count.textContent = articles.length;
-            
-            list.innerHTML = articles.map(a => {
-                const sourceColor = a.source === 'GolfWRX' ? 'text-blue-400' : 'text-radar-green';
-                const sourceBg = a.source === 'GolfWRX' ? 'bg-blue-400/10 border-blue-400/30' : 'bg-radar-green/10 border-radar-green/30';
-                
-                return `
-                <a href="${a.url}" target="_blank" rel="noopener" 
-                   class="block bg-radar-dark border border-radar-grid rounded-lg overflow-hidden hover:border-radar-green transition-colors group">
-                    ${a.image ? `
-                        <div class="h-28 bg-gray-900 overflow-hidden">
-                            <img src="${a.image}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.parentElement.innerHTML='<div class=\\'flex items-center justify-center h-full text-gray-700\\'><i class=\\'fas fa-newspaper text-2xl\\'></i></div>'">
-                        </div>
-                    ` : ''}
-                    <div class="p-3">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="${sourceColor} ${sourceBg} border text-[10px] font-bold px-1.5 py-0.5 rounded">${a.source === 'GolfWRX' ? 'WRX' : a.source?.toUpperCase() || 'NEWS'}</span>
-                            <span class="text-gray-600 text-[10px]">${a.category || 'News'}</span>
-                        </div>
-                        <h4 class="text-white text-sm font-semibold leading-tight line-clamp-2 group-hover:text-radar-green transition-colors">
-                            ${a.title}
-                        </h4>
-                        ${a.preview ? `<p class="text-gray-500 text-xs mt-1 line-clamp-2">${a.preview}</p>` : ''}
-                    </div>
-                </a>
-            `}).join('');
-        }
-        
-        function toggleIntelFeed() {
-            const sidebar = document.getElementById('intel-sidebar');
-            sidebar.classList.toggle('open');
         }
 
         // =================================================================
