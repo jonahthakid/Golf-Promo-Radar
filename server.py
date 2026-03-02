@@ -1322,6 +1322,188 @@ def clean_promo_text(text):
     return text
 
 
+def sanitize_offer_copy(text):
+    """Strip marketing language from offer copy, keeping only structured facts.
+    
+    Legal requirement: Display only brand, discount %, dollar amount, code, 
+    expiration, and product scope. Remove superlatives, CTAs, urgency language, 
+    brand slogans, and promotional adjectives.
+    
+    Input:  "Spring Into Savings! Take an EXTRA 20% Off Sale Styles. Best Deals Guaranteed!"
+    Output: "Extra 20% off sale styles"
+    """
+    if not text:
+        return text
+    
+    text = ' '.join(text.split())
+    
+    # --- PHASE 1: Extract structured data before stripping ---
+    
+    # Extract promo codes (preserve them)
+    code_match = re.search(r'(?:code|coupon|promo)[:\s]+([A-Z0-9]{3,20})\b', text, re.IGNORECASE)
+    extracted_code = code_match.group(1).upper() if code_match else None
+    
+    # Extract expiration dates (preserve them)
+    exp_patterns = [
+        r'(?:ends?|expires?|through|until|valid through|good through)\s+(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)',
+        r'(?:ends?|expires?|through|until)\s+((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{1,2}(?:,?\s+\d{4})?)',
+    ]
+    extracted_exp = None
+    for pat in exp_patterns:
+        exp_match = re.search(pat, text, re.IGNORECASE)
+        if exp_match:
+            extracted_exp = exp_match.group(1).strip()
+            break
+    
+    # Extract dollar-off amounts
+    dollar_matches = re.findall(r'\$\d+(?:\.\d{2})?(?:\s*off)?', text, re.IGNORECASE)
+    
+    # Extract percentage discount patterns (keep "up to" qualifier)
+    pct_pattern = re.search(r'((?:up to|save|extra|additional|take)\s+)?(\d+)%\s*(off)?', text, re.IGNORECASE)
+    
+    # Extract BOGO patterns
+    bogo_match = re.search(r'(buy\s+\d+[,\s]+get\s+\d+\s*(?:free|%\s*off|\$\d+\s*off)?)', text, re.IGNORECASE)
+    
+    # Extract "free shipping" (keep as factual)
+    free_ship = bool(re.search(r'free\s+shipping', text, re.IGNORECASE))
+    
+    # Extract free gift patterns
+    free_gift_match = re.search(r'free\s+(gift|item|bonus|accessory|bag|towel|hat|headcover)\w*(?:\s+(?:with|on)\s+(?:orders?\s+(?:over|of)\s+\$\d+|purchase))?', text, re.IGNORECASE)
+    
+    # --- PHASE 2: Strip marketing language ---
+    
+    # Remove exclamation-heavy marketing phrases first
+    text = re.sub(r'[^.!?]*(?:don\'t miss|hurry|act now|limited time|while supplies last|today only|flash sale|last chance|won\'t last|selling fast|almost gone)[^.!?]*[.!?]?\s*', ' ', text, flags=re.IGNORECASE)
+    
+    # Remove marketing headline phrases (usually before the actual offer)
+    marketing_headlines = [
+        r'^[^%$]*?(?:into savings|biggest sale|sale of the (?:season|year)|celebrate|introducing|welcome to|we\'re celebrating|it\'s here|the wait is over|you\'re going to love)[^.!]*[.!:]\s*',
+        r'(?:our\s+)?(?:biggest|best|greatest|most\s+\w+|ultimate|incredible|amazing|unbelievable|exclusive|special|massive|huge|epic|mega|blowout|blockbuster)\s+(?:sale|deal|offer|event|savings|promotion|discount)s?\s*[.!:–-]?\s*',
+    ]
+    for pat in marketing_headlines:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE)
+    
+    # Remove superlative/marketing adjectives
+    superlatives = [
+        r'\b(?:guaranteed|unbeatable|incredible|amazing|awesome|fantastic|insane|crazy|spectacular|phenomenal|mind-blowing|jaw-dropping|game-changing|revolutionary|must-have|can\'t-miss)\s*',
+        r'\b(?:best(?:-selling)?|hottest|top-rated|highest-quality|premium|luxury|world-class|award-winning|customer-favorite)\s+(?=\w)',
+        r'\b(?:absolutely|literally|seriously|honestly|truly|definitely|undeniably)\s+',
+        # Standalone marketing adjectives before product/offer nouns
+        r'\b(?:massive|huge|epic|mega|insane|crazy|unreal|wild|sick)\s+(?=\d|up to|\$)',
+        r'\b(?:massive|huge|epic|mega|insane|crazy|unreal|wild|sick)\b\s*',
+    ]
+    for pat in superlatives:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE)
+    
+    # Remove CTAs and urgency phrases
+    cta_patterns = [
+        r'\bshop\s+(?:the\s+)?(?:\w+\s+)*?(?:now|today|deals?|sale|collection|savings?)(?:\s*[!.])?',
+        r'\b(?:buy|get|grab|score|snag|claim|unlock|discover|explore)\s+(?:now|today|it|them|this|these|yours)(?:\s*[!.])?',
+        r'\b(?:don\'t wait|act fast|limited (?:time|quantities?|stock)|while (?:they|it) last|ends? soon|going fast|prices? won\'t last)\b[^.]*[.!]?',
+        r'\b(?:treat yourself|you deserve|your (?:new )?favorite|you\'ll love|you won\'t (?:believe|regret))\b[^.]*[.!]?',
+        r'\byou\'ll\s+find\s+\w+\b',  # "you'll find anywhere"
+    ]
+    for pat in cta_patterns:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE)
+    
+    # Remove possessive marketing ("our", "your")
+    text = re.sub(r'\b(?:our|your|my)\s+(?=(?:biggest|best|most|favorite|exclusive|special|annual|seasonal))', '', text, flags=re.IGNORECASE)
+    
+    # Remove "lowest prices" type claims
+    text = re.sub(r'\b(?:lowest|best)\s+prices?\s*(?:of the (?:year|season))?\s*(?:guaranteed)?\b', '', text, flags=re.IGNORECASE)
+    
+    # Remove promo code mentions (we'll re-add cleanly)
+    text = re.sub(r'(?:use|enter|apply|with)\s+(?:code|coupon|promo)\s+[A-Z0-9]{3,20}\b(?:\s+at\s+checkout)?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:code|coupon|promo)[:\s]+[A-Z0-9]{3,20}\b(?:\s+at\s+checkout)?', '', text, flags=re.IGNORECASE)
+    
+    # Remove expiration text (we'll re-add cleanly)
+    for pat in exp_patterns:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE)
+    
+    # Remove orphaned fragments left after aggressive stripping
+    orphan_patterns = [
+        r'\b(?:shop|get|find|see|view|check out)\s+the\s+(?:today|now)\b',  # "shop the today"
+        r'\byou\'ll\s+find\s+\w*\b',  # "you'll find anywhere"
+        r'\bat\s+checkout\b',  # orphaned "at checkout"
+        r'\bthe\s+(?:today|now)\b',  # "the today"
+        r'\bon\s+(?:the\s+)?(?:today|now)\b',  # "on today"
+        r'\bfor\s+(?:the|a)\s*$',  # trailing "for the"
+        r'^\s*(?:the|a|an|on|in|at|for|and|or|with|to)\s*$',  # lone prepositions as entire text
+        r'\b(?:the|a)\s+(?:the|a)\s+',  # double articles
+    ]
+    for pat in orphan_patterns:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE)
+    
+    # --- PHASE 3: Clean up and reconstruct ---
+    
+    # Clean punctuation artifacts
+    text = re.sub(r'\s*[!]+', '.', text)  # ! → .
+    text = re.sub(r'\.{2,}', '.', text)   # Multiple dots
+    text = re.sub(r'\s*[-–—]+\s*[-–—]*\s*', ' - ', text)  # Normalize dashes
+    text = re.sub(r'\s*[|•]\s*', '. ', text)  # Pipe/bullet → period
+    text = re.sub(r'\.\s*\.', '.', text)   # Double periods
+    text = re.sub(r'^\s*[-–—.,:;]\s*', '', text)  # Leading punctuation
+    text = re.sub(r'\s+', ' ', text).strip(' .-–—,:;')
+    
+    # Remove sentences/fragments that are too short to be meaningful (under 4 words, no numbers)
+    if '. ' in text:
+        sentences = [s.strip() for s in text.split('. ')]
+        sentences = [s for s in sentences if len(s.split()) >= 3 or re.search(r'\d', s)]
+        text = '. '.join(sentences)
+    
+    # Strip trailing dangling prepositions/articles
+    text = re.sub(r'\s+(?:the|a|an|on|in|at|for|and|or|with|to)\s*\.?\s*$', '', text, flags=re.IGNORECASE)
+    text = text.strip(' .-–—,:;')
+    
+    # Capitalize first letter
+    if text:
+        text = text[0].upper() + text[1:]
+    
+    # Re-append structured data cleanly
+    parts = [text] if text else []
+    
+    if extracted_code:
+        # Only add code if not already embedded naturally
+        if extracted_code.lower() not in text.lower():
+            parts.append(f"Code: {extracted_code}")
+    
+    if extracted_exp:
+        parts.append(f"Ends {extracted_exp}")
+    
+    result = '. '.join(p.strip(' .') for p in parts if p.strip(' .'))
+    
+    # Final cleanup
+    result = re.sub(r'\.\s*\.', '.', result)
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    # If we stripped everything meaningful, fall back to reconstructed basics
+    if not result or len(result) < 5:
+        fragments = []
+        if pct_pattern:
+            qualifier = (pct_pattern.group(1) or '').strip()
+            pct = pct_pattern.group(2)
+            fragments.append(f"{qualifier} {pct}% off".strip().capitalize())
+        elif dollar_matches:
+            fragments.append(dollar_matches[0] + (' off' if 'off' not in dollar_matches[0].lower() else ''))
+        elif bogo_match:
+            fragments.append(bogo_match.group(1).strip().capitalize())
+        elif free_ship:
+            fragments.append("Free shipping")
+        elif free_gift_match:
+            fragments.append(free_gift_match.group(0).strip().capitalize())
+        else:
+            fragments.append("Sale")
+        
+        if extracted_code:
+            fragments.append(f"Code: {extracted_code}")
+        if extracted_exp:
+            fragments.append(f"Ends {extracted_exp}")
+        
+        result = '. '.join(fragments)
+    
+    return result[:150]
+
+
 def matches_promo(text):
     """Check if text contains promo patterns"""
     text_lower = text.lower()
@@ -2536,6 +2718,19 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     new_clearance = sum(1 for c in fresh_clearance if c.get("is_new"))
     new_impact = sum(1 for d in fresh_impact if d.get("is_new"))
     
+    # === LEGAL COMPLIANCE: Sanitize offer copy ===
+    # Strip marketing language from all promo text.
+    # Display only structured facts: discount, code, scope, expiration.
+    for p in fresh_promos:
+        if p.get("promo"):
+            p["promo"] = sanitize_offer_copy(p["promo"])
+    for c in fresh_clearance:
+        if c.get("promo"):
+            c["promo"] = sanitize_offer_copy(c["promo"])
+    for d in fresh_impact:
+        if d.get("promo"):
+            d["promo"] = sanitize_offer_copy(d["promo"])
+    
     data = {
         "lastUpdated": datetime.now().isoformat(),
         "criticalHitIndex": critical_hit_index,
@@ -2556,7 +2751,7 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         "emailOffers": [
             {
                 "brand": p["brand"], 
-                "offer": p["email_offer"], 
+                "offer": sanitize_offer_copy(p["email_offer"]), 
                 "method": "Website", 
                 "url": p.get("url"), 
                 "affiliate_url": p.get("affiliate_url")
@@ -2584,6 +2779,9 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     try:
         reddit_intel = fetch_reddit_intel(limit=15)
         if reddit_intel:
+            for r in reddit_intel:
+                if r.get("promo"):
+                    r["promo"] = sanitize_offer_copy(r["promo"])
             data["communityIntel"] = reddit_intel
             print(f"🔴 Reddit Intel: {len(reddit_intel)} community deals found")
     except Exception as e:
