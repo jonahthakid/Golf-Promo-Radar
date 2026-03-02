@@ -1223,6 +1223,14 @@ JUNK_PHRASES = [
     'your cart is empty', 'no items in', 'items in your cart',
     # Currency selectors
     'currency', 'usd $', 'eur €', 'gbp £',
+    # Product listing UI
+    'quick add', 'add to cart', 'add to bag', 'select size', 'choose size',
+    'pant waist', 'waist size', 'chest size', 'inseam',
+    # Error page content
+    'page you were looking for', 'could not be found', 'page not found', '404',
+    # Generic page titles (not promos)
+    'custom golf balls', 'discount golf equipment',
+    'redeem your discount',
 ]
 
 # Words that indicate this is likely a real promo
@@ -1410,6 +1418,26 @@ def sanitize_offer_copy(text):
     for pat in cta_patterns:
         text = re.sub(pat, '', text, flags=re.IGNORECASE)
     
+    # Remove product listing UI junk (sizing, "quick add", variant selectors)
+    ui_junk_patterns = [
+        r'\bquick\s+add\b[^.]*',  # "QUICK ADD SMALL (PANT...)"
+        r'\(\s*(?:pant|waist|chest|neck|inseam|shoe)\s*(?:size)?\s*[^)]*\)',  # "(PANT WAIST SIZE 30 - 32)"
+        r'\b(?:small|medium|large|x-?large|xx-?large|xs|sm|md|lg|xl|xxl|2xl|3xl)\s*(?:\(|/|,\s*(?:small|medium|large))',  # Size lists
+        r'\b(?:select|choose)\s+(?:size|color|option)\b[^.]*',  # "Select size..."
+        r'\badd\s+to\s+(?:cart|bag|wishlist)\b',  # "Add to cart"
+        r'\b(?:in|at|during)\s+checkout\b',  # "in checkout", "at checkout"
+        r'\b(?:redeem|apply)\s+(?:your\s+)?(?:discount|offer|savings?)\s+(?:online\s+)?(?:in|at|during)\s+\w+\b',  # "REDEEM YOUR DISCOUNT ONLINE DURING CHECKOUT"
+    ]
+    for pat in ui_junk_patterns:
+        text = re.sub(pat, '', text, flags=re.IGNORECASE)
+    
+    # Remove named sale headlines ("THE ARCHIVE SALE", "THE SPRING EVENT")
+    text = re.sub(r'\bthe\s+\w+\s+(?:sale|event|clearance)\s*[-–:]?\s*', '', text, flags=re.IGNORECASE)
+    
+    # Remove product description fragments (no promo value)
+    text = re.sub(r'\bfor\s+the\s+(?:looking|perfect|best|ideal|ultimate)\b[^.%$]*?(?:\.|$)', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\blooking\s+for\b[^.%$]*?(?:\.|$)', '', text, flags=re.IGNORECASE)
+    
     # Remove possessive marketing ("our", "your")
     text = re.sub(r'\b(?:our|your|my)\s+(?=(?:biggest|best|most|favorite|exclusive|special|annual|seasonal))', '', text, flags=re.IGNORECASE)
     
@@ -1481,7 +1509,19 @@ def sanitize_offer_copy(text):
     result = re.sub(r'\s+', ' ', result).strip()
     
     # If we stripped everything meaningful, fall back to reconstructed basics
-    if not result or len(result) < 5:
+    # Also fall back if remaining text has no promo signal (just product descriptions)
+    has_promo_signal = bool(
+        re.search(r'\d+%', result) or           # percentage
+        re.search(r'\$\d+', result) or           # dollar amount
+        re.search(r'\bfree\b', result, re.I) or  # free shipping/gift
+        re.search(r'\bbogo\b', result, re.I) or  # buy one get one
+        re.search(r'\bbuy\s+\d+', result, re.I) or  # buy X get Y
+        re.search(r'\boff\b', result, re.I) or   # X off
+        re.search(r'\bsave\b', result, re.I) or  # save X
+        extracted_code                            # has a promo code
+    )
+    
+    if not result or len(result) < 5 or not has_promo_signal:
         fragments = []
         if pct_pattern:
             qualifier = (pct_pattern.group(1) or '').strip()
