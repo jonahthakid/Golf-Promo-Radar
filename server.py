@@ -1333,7 +1333,11 @@ def sanitize_offer_copy(text):
     Output: "Extra 20% off sale styles"
     """
     if not text:
-        return text
+        return text or ""
+    
+    # Ensure we're working with a string
+    if not isinstance(text, str):
+        return str(text)
     
     text = ' '.join(text.split())
     
@@ -2198,86 +2202,99 @@ def scrape_brand(brand):
 
 def run_scraper():
     """Run full scrape of all brands"""
-    print(f"\n{'='*60}")
-    print(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📡 Scanning {len(BRANDS)} brands...")
-    print(f"{'='*60}")
-    
-    results = []
-    clearance_results = []
-    impact_deals = []
-    success_count = 0
-    error_count = 0
-    
-    # Concurrent brand scraping
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
-        for i, future in enumerate(as_completed(future_to_brand), 1):
-            brand = future_to_brand[future]
-            try:
-                result = future.result()
-                if result["error"]:
-                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
-                    error_count += 1
-                elif result["promo"]:
-                    code_str = f" (code: {result['code']})" if result['code'] else ""
-                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
-                    success_count += 1
-                    results.append(result)
-                else:
-                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
-                    results.append(result)
-            except Exception as e:
-                print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
-                error_count += 1
-    
-    # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
-    print(f"\n{'='*60}")
-    print(f"🏷️  Scanning sale pages...")
-    print(f"{'='*60}")
-    
     try:
-        clearance_results = scan_sale_pages(BRANDS)
-    except Exception as e:
-        print(f"⚠️  Sale page scan failed: {e}")
+        print(f"\n{'='*60}")
+        print(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📡 Scanning {len(BRANDS)} brands...")
+        print(f"{'='*60}")
+        
+        results = []
         clearance_results = []
-    
-    # Fetch Impact deals
-    print(f"\n{'='*60}")
-    print(f"🔗 Fetching Impact Radius deals...")
-    print(f"{'='*60}")
-    
-    try:
-        if impact_api:
-            impact_deals = impact_api.get_all_deals()
-            print(f"✅ Found {len(impact_deals)} deals from Impact")
-        else:
-            print("⚠️  Impact API not available")
-    except Exception as e:
-        print(f"⚠️  Impact deals fetch failed: {e}")
         impact_deals = []
-    
-    # Scan for new drops / new arrivals
-    print(f"\n{'='*60}")
-    print(f"🆕 Scanning new arrivals pages...")
-    print(f"{'='*60}")
-    
-    new_drops = []
-    try:
-        new_drops = scrape_all_new_arrivals()
-    except Exception as e:
-        print(f"⚠️  New arrivals scan failed: {e}")
+        success_count = 0
+        error_count = 0
+        
+        # Concurrent brand scraping
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
+            for i, future in enumerate(as_completed(future_to_brand), 1):
+                brand = future_to_brand[future]
+                try:
+                    result = future.result()
+                    if result["error"]:
+                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
+                        error_count += 1
+                    elif result["promo"]:
+                        code_str = f" (code: {result['code']})" if result['code'] else ""
+                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
+                        success_count += 1
+                        results.append(result)
+                    else:
+                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
+                        results.append(result)
+                except Exception as e:
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
+                    error_count += 1
+        
+        # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
+        print(f"\n{'='*60}")
+        print(f"🏷️  Scanning sale pages...")
+        print(f"{'='*60}")
+        
+        try:
+            clearance_results = scan_sale_pages(BRANDS)
+        except Exception as e:
+            print(f"⚠️  Sale page scan failed: {e}")
+            clearance_results = []
+        
+        # Fetch Impact deals
+        print(f"\n{'='*60}")
+        print(f"🔗 Fetching Impact Radius deals...")
+        print(f"{'='*60}")
+        
+        try:
+            if impact_api:
+                impact_deals = impact_api.get_all_deals()
+                print(f"✅ Found {len(impact_deals)} deals from Impact")
+            else:
+                print("⚠️  Impact API not available")
+        except Exception as e:
+            print(f"⚠️  Impact deals fetch failed: {e}")
+            impact_deals = []
+        
+        # Scan for new drops / new arrivals
+        print(f"\n{'='*60}")
+        print(f"🆕 Scanning new arrivals pages...")
+        print(f"{'='*60}")
+        
         new_drops = []
+        try:
+            new_drops = scrape_all_new_arrivals()
+        except Exception as e:
+            print(f"⚠️  New arrivals scan failed: {e}")
+            new_drops = []
+        
+        print(f"\n{'='*60}")
+        print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
+        print(f"{'='*60}\n")
+        
+        # Always save main results even if clearance/impact fails
+        if results:
+            try:
+                save_data(results, clearance_results, impact_deals, new_drops)
+            except Exception as e:
+                print(f"❌ CRITICAL: save_data failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return results
     
-    print(f"\n{'='*60}")
-    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
-    print(f"{'='*60}\n")
-    
-    # Always save main results even if clearance/impact fails
-    if results:
-        save_data(results, clearance_results, impact_deals, new_drops)
-    
-    return results
+    except Exception as e:
+        # Top-level catch: prevents APScheduler from silently killing the job
+        print(f"❌ CRITICAL: run_scraper crashed: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 def mine_sitemap_for_sale_urls(base_url, max_urls=5):
@@ -2677,6 +2694,14 @@ def scrape_all_new_arrivals():
     return all_new_drops
 
 
+def _safe_sanitize(text):
+    """Wrapper around sanitize_offer_copy that never throws"""
+    try:
+        return sanitize_offer_copy(text)
+    except Exception:
+        return text
+
+
 def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     """Save scraped data to file with freshness tracking"""
     active_promos = [p for p in promos if p.get("promo")]
@@ -2723,13 +2748,22 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     # Display only structured facts: discount, code, scope, expiration.
     for p in fresh_promos:
         if p.get("promo"):
-            p["promo"] = sanitize_offer_copy(p["promo"])
+            try:
+                p["promo"] = sanitize_offer_copy(p["promo"])
+            except Exception as e:
+                print(f"⚠️  Sanitize failed for {p.get('brand','?')}: {e}")
     for c in fresh_clearance:
         if c.get("promo"):
-            c["promo"] = sanitize_offer_copy(c["promo"])
+            try:
+                c["promo"] = sanitize_offer_copy(c["promo"])
+            except Exception as e:
+                print(f"⚠️  Sanitize failed for clearance {c.get('brand','?')}: {e}")
     for d in fresh_impact:
         if d.get("promo"):
-            d["promo"] = sanitize_offer_copy(d["promo"])
+            try:
+                d["promo"] = sanitize_offer_copy(d["promo"])
+            except Exception as e:
+                print(f"⚠️  Sanitize failed for impact {d.get('brand','?')}: {e}")
     
     data = {
         "lastUpdated": datetime.now().isoformat(),
@@ -2751,7 +2785,7 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         "emailOffers": [
             {
                 "brand": p["brand"], 
-                "offer": sanitize_offer_copy(p["email_offer"]), 
+                "offer": _safe_sanitize(p["email_offer"]), 
                 "method": "Website", 
                 "url": p.get("url"), 
                 "affiliate_url": p.get("affiliate_url")
@@ -2781,7 +2815,10 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         if reddit_intel:
             for r in reddit_intel:
                 if r.get("promo"):
-                    r["promo"] = sanitize_offer_copy(r["promo"])
+                    try:
+                        r["promo"] = sanitize_offer_copy(r["promo"])
+                    except Exception as e:
+                        print(f"⚠️  Sanitize failed for reddit {r.get('brand','?')}: {e}")
             data["communityIntel"] = reddit_intel
             print(f"🔴 Reddit Intel: {len(reddit_intel)} community deals found")
     except Exception as e:
