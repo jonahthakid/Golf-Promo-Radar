@@ -730,6 +730,21 @@
             // Just "sale" or "new"
             if (t.match(/^(sale|new|shop now|view all)$/i)) return true;
             
+            // Product listing UI junk (sizing, quick add, etc)
+            if (t.includes('quick add')) return true;
+            if (t.match(/\b(pant|waist|chest|neck|inseam)\s*(size)?\s*\d/i)) return true;
+            if (t.includes('add to cart') || t.includes('add to bag')) return true;
+            if (t.includes('select size') || t.includes('choose size')) return true;
+            
+            // Page content with no promo signal
+            const hasPromoSignal = t.match(/\d+%/) || t.match(/\$\d/) || t.includes('free') || 
+                                   t.includes('off') || t.includes('save') || t.includes('bogo') ||
+                                   t.includes('buy ') || t.includes('code:');
+            if (!hasPromoSignal && t.length > 20) return true;
+            
+            // Error page content
+            if (t.includes('page you were looking for') || t.includes('could not be found') || t.includes('404')) return true;
+            
             return false;
         }
         
