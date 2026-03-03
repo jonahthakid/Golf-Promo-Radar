@@ -719,7 +719,7 @@ NEW_ARRIVALS_PATTERNS = [
 
 # Brands with known new arrivals pages (brand_name -> url)
 BRAND_NEW_ARRIVALS = {
-    # Lifestyle / Streetwear - most likely to have "new drops"
+    # Manual overrides for brands with non-standard new arrivals URLs
     "Malbon Golf": "https://www.malbongolf.com/collections/new-arrivals",
     "Eastside Golf": "https://www.eastsidegolf.com/collections/new-arrivals",
     "Sunday Red": "https://www.sundayred.com/collections/new-arrivals",
@@ -731,28 +731,20 @@ BRAND_NEW_ARRIVALS = {
     "Whim Golf": "https://whimgolf.com/collections/all",
     "Manors": "https://manorsgolf.com/collections/new-in",
     "Good Good Golf": "https://goodgood.com/collections/new-arrivals",
-    
-    # Premium Apparel
     "G/FORE": "https://www.gfore.com/collections/new-arrivals",
     "Greyson Clothiers": "https://www.greysonclothiers.com/collections/new-arrivals",
     "Peter Millar": "https://www.petermillar.com/new-arrivals/",
     "TravisMathew": "https://www.travismathew.com/collections/new-arrivals",
     "J.Lindeberg": "https://www.jlindeberg.com/us/new-arrivals",
     "Holderness & Bourne": "https://www.holderness-bourne.com/collections/new-arrivals",
-    
-    # Mid-tier
     "Rhoback": "https://rhoback.com/collections/new-arrivals",
     "Swannies": "https://swannies.co/collections/new-arrivals",
     "Bad Birdie": "https://badbirdie.com/collections/new-arrivals",
     "Linksoul": "https://linksoul.com/collections/new-arrivals",
-    
-    # Footwear
     "FootJoy": "https://www.footjoy.com/new-arrivals/",
     "TRUE Linkswear": "https://truelinkswear.com/collections/new-arrivals",
     "Cuater": "https://cuater.com/collections/new-arrivals",
     "Duca del Cosma": "https://ducadelcosma.us/collections/new-arrivals",
-    
-    # Equipment OEMs
     "Titleist": "https://www.titleist.com/new",
     "TaylorMade": "https://www.taylormadegolf.com/new/",
     "Callaway": "https://www.callawaygolf.com/new/",
@@ -761,18 +753,50 @@ BRAND_NEW_ARRIVALS = {
     "Cleveland Golf": "https://www.clevelandgolf.com/new/",
     "Mizuno Golf": "https://mizunogolf.com/us/new-arrivals/",
     "Srixon/Cleveland": "https://www.srixon.com/us/new-arrivals/",
-    
-    # Women's
     "Foray Golf": "https://foraygolf.com/collections/new-arrivals",
     "KINONA": "https://kinonasport.com/collections/new-arrivals",
     "Daily Sports": "https://us.dailysports.com/collections/new-arrivals",
-    
-    # Tech
     "Arccos Golf": "https://www.arccosgolf.com/collections/new",
-    
-    # Sugarloaf
     "Sugarloaf Social Club": "https://sugarloafsocialclub.com/collections/new-arrivals",
+    # Non-standard platforms with known URLs
+    "Nike Golf": "https://www.nike.com/w/new-golf-3glsmz3n82y",
+    "Adidas Golf": "https://www.adidas.com/us/new_arrivals-golf",
+    "PUMA Golf": "https://us.puma.com/us/en/golf/new-arrivals",
+    "Under Armour Golf": "https://www.underarmour.com/en-us/c/mens/golf/?newArrival=true",
+    "Oakley Golf": "https://www.oakley.com/en-us/category/golf/new-arrivals",
+    "PXG": "https://www.pxg.com/en-us/new",
 }
+
+# Skip these brands for drops (retailers/aggregators, not direct brands)
+DROPS_SKIP_BRANDS = {
+    "Amazon Golf", "Amazon Essentials Golf", "Dick's Sporting Goods", "Golf Galaxy",
+    "PGA Tour Superstore", "Rock Bottom Golf", "Golf Discount", "Budget Golf",
+    "2nd Swing", "3balls", "Carl's Golfland", "Golf Apparel Shop", "Golf Avenue",
+    "Golf Headquarters", "Golf Locker", "Golfers Warehouse", "Maple Hill Golf",
+    "Global Golf", "The Golf Warehouse", "Worldwide Golf Shops", "Scheels",
+    "Rain or Shine Golf", "Callaway Pre-Owned", "Five Iron Golf",
+    "Walter Hagen", "Trendy Golf",
+}
+
+
+def build_new_arrivals_urls():
+    """Auto-generate new arrivals URLs for all brands not in manual overrides.
+    Tries /collections/new-arrivals for Shopify-style stores."""
+    urls = dict(BRAND_NEW_ARRIVALS)  # Start with manual overrides
+    
+    for brand in BRANDS:
+        name = brand["name"]
+        if name in urls or name in DROPS_SKIP_BRANDS:
+            continue
+        
+        base_url = brand["url"].rstrip('/')
+        parsed = urlparse(base_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        
+        # Try /collections/new-arrivals (works for most Shopify stores)
+        urls[name] = f"{base}/collections/new-arrivals"
+    
+    return urls
 
 # =============================================================================
 # IMPACT RADIUS API INTEGRATION
@@ -1246,23 +1270,44 @@ def is_junk_text(text):
     """Check if text is likely navigation/junk"""
     text_lower = text.lower()
     
-    # Too short or too long
-    if len(text) < 15 or len(text) > 300:
+    # Too long
+    if len(text) > 300:
         return True
     
-    # Mostly junk phrases
+    # Very short — only OK if it has a clear promo signal
+    if len(text) < 5:
+        return True
+    if len(text) < 12:
+        has_signal = bool(re.search(r'\d+%', text) or re.search(r'\$\d', text) or 
+                         'free' in text_lower or 'off' in text_lower or 'save' in text_lower or
+                         'sale' in text_lower or 'clearance' in text_lower or 'bogo' in text_lower)
+        if not has_signal:
+            return True
+    
+    # Mostly junk phrases — but override if text has strong promo signals
     junk_count = sum(1 for phrase in JUNK_PHRASES if phrase in text_lower)
     word_count = len(text.split())
     if junk_count > 2 or (junk_count > 0 and word_count < 8):
-        return True
+        # Rescue if it has clear promo content
+        has_strong_signal = bool(
+            re.search(r'\d+%', text) or re.search(r'\$\d', text) or
+            re.search(r'\bfree shipping\b', text_lower) or
+            re.search(r'\bbogo\b', text_lower) or
+            re.search(r'\bbuy\s+\d+\b', text_lower)
+        )
+        if not has_strong_signal:
+            return True
     
     # Too many pipes/bullets (likely navigation)
     if text.count('|') > 2 or text.count('•') > 2 or text.count('›') > 2:
         return True
     
-    # Mostly uppercase nav items
+    # Mostly uppercase nav items — rescue if it has promo content
     if text.isupper() and len(text) > 50:
-        return True
+        has_promo = bool(re.search(r'\d+%', text) or re.search(r'\$\d', text) or
+                        re.search(r'\bfree\b', text_lower))
+        if not has_promo:
+            return True
         
     return False
 
@@ -1518,6 +1563,11 @@ def sanitize_offer_copy(text):
         re.search(r'\bbuy\s+\d+', result, re.I) or  # buy X get Y
         re.search(r'\boff\b', result, re.I) or   # X off
         re.search(r'\bsave\b', result, re.I) or  # save X
+        re.search(r'\bsale\b', result, re.I) or  # sale
+        re.search(r'\bclearance\b', result, re.I) or  # clearance
+        re.search(r'\bspecial', result, re.I) or  # specials
+        re.search(r'\bdiscount', result, re.I) or  # discount
+        re.search(r'\bdeal', result, re.I) or     # deal/deals
         extracted_code                            # has a promo code
     )
     
@@ -2303,9 +2353,11 @@ def run_scraper():
             impact_deals = []
         
         # Scan for new drops / new arrivals
+        # Brief delay to reduce 429s — main scraper just hit many of these same domains
         print(f"\n{'='*60}")
-        print(f"🆕 Scanning new arrivals pages...")
+        print(f"🆕 Scanning new arrivals pages (5s cooldown)...")
         print(f"{'='*60}")
+        time.sleep(5)
         
         new_drops = []
         try:
@@ -2587,6 +2639,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
     try:
         response = requests.get(new_arrivals_url, headers=get_headers(), timeout=8, allow_redirects=True)
         if response.status_code != 200:
+            print(f"  ⚠️  {brand_name}: HTTP {response.status_code}")
             return []
         
         soup = BeautifulSoup(response.text, 'lxml')
@@ -2597,7 +2650,54 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
         
         products = []
         
-        # Common product card selectors
+        # --- Strategy 1: JSON-LD product data (works on Shopify + many others) ---
+        json_ld_scripts = soup.select('script[type="application/ld+json"]')
+        for script_tag in json_ld_scripts:
+            try:
+                ld_data = json.loads(script_tag.string or '{}')
+                # Handle both single objects and arrays
+                items = ld_data if isinstance(ld_data, list) else [ld_data]
+                for item in items:
+                    # ItemList with ListElements
+                    if item.get('@type') == 'ItemList':
+                        for elem in item.get('itemListElement', []):
+                            product = elem if elem.get('@type') == 'Product' else elem.get('item', {})
+                            if product.get('name'):
+                                price = None
+                                offers = product.get('offers', {})
+                                if isinstance(offers, list) and offers:
+                                    offers = offers[0]
+                                if offers.get('price'):
+                                    price = f"${offers['price']}"
+                                products.append({
+                                    "name": product['name'][:100],
+                                    "url": product.get('url', new_arrivals_url),
+                                    "image": product.get('image', [None])[0] if isinstance(product.get('image'), list) else product.get('image'),
+                                    "price": price,
+                                    "brand": brand_name,
+                                })
+                    # Direct Product type
+                    elif item.get('@type') == 'Product' and item.get('name'):
+                        price = None
+                        offers = item.get('offers', {})
+                        if isinstance(offers, list) and offers:
+                            offers = offers[0]
+                        if offers.get('price'):
+                            price = f"${offers['price']}"
+                        products.append({
+                            "name": item['name'][:100],
+                            "url": item.get('url', new_arrivals_url),
+                            "image": item.get('image', [None])[0] if isinstance(item.get('image'), list) else item.get('image'),
+                            "price": price,
+                            "brand": brand_name,
+                        })
+            except (json.JSONDecodeError, TypeError, KeyError):
+                continue
+        
+        if products:
+            return products[:12]
+        
+        # --- Strategy 2: DOM selectors (Shopify + common patterns) ---
         product_selectors = [
             '[class*="product-card"]',
             '[class*="product-item"]',
@@ -2608,6 +2708,13 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
             '.product',
             'article[class*="product"]',
             '[class*="collection-product"]',
+            # Non-Shopify patterns
+            '[class*="plp-card"]',        # Common PLP card pattern
+            '[class*="product-listing"]',
+            '[class*="ProductTile"]',
+            '[class*="product_card"]',
+            '[class*="productCard"]',
+            'li[class*="product"]',
         ]
         
         product_elements = []
@@ -2620,6 +2727,14 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
         if not product_elements:
             # Fallback: look for product links
             product_elements = soup.select('a[href*="/products/"]')[:12]
+        
+        if not product_elements:
+            # Broader fallback: links with product-like URLs
+            product_elements = soup.select('a[href*="/product/"], a[href*="/p/"], a[href*="/shop/"]')[:12]
+        
+        if not product_elements:
+            print(f"  ○  {brand_name}: 200 OK but no product elements matched")
+            return []
         
         for elem in product_elements:
             try:
@@ -2650,7 +2765,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
                 if elem.name == 'a':
                     product_url = elem.get('href', '')
                 else:
-                    link = elem.select_one('a[href*="/products/"], a[href*="/product/"]')
+                    link = elem.select_one('a[href*="/products/"], a[href*="/product/"], a[href]')
                     if link:
                         product_url = link.get('href', '')
                 
@@ -2705,8 +2820,9 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 
 
 def scrape_all_new_arrivals():
-    """Scrape new arrivals from all brands with known new arrivals pages (concurrent)"""
-    print(f"\n🆕 Scanning {len(BRAND_NEW_ARRIVALS)} brands for new drops...")
+    """Scrape new arrivals from all brands (concurrent)"""
+    all_urls = build_new_arrivals_urls()
+    print(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
     
     all_new_drops = []
     
@@ -2714,15 +2830,15 @@ def scrape_all_new_arrivals():
         brand_name, url = item
         return brand_name, scrape_new_arrivals_page(brand_name, url)
     
-    with ThreadPoolExecutor(max_workers=15) as executor:
-        futures = {executor.submit(scrape_brand_arrivals, item): item for item in BRAND_NEW_ARRIVALS.items()}
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(scrape_brand_arrivals, item): item for item in all_urls.items()}
         for future in as_completed(futures):
             try:
                 brand_name, products = future.result()
                 if products:
                     print(f"  🆕 {brand_name}: {len(products)} new products")
                     for p in products:
-                        p["source_url"] = BRAND_NEW_ARRIVALS[brand_name]
+                        p["source_url"] = all_urls[brand_name]
                         p["category"] = next((b.get("category", "apparel") for b in BRANDS if b["name"] == brand_name), "apparel")
                         p["tags"] = next((b.get("tags", []) for b in BRANDS if b["name"] == brand_name), [])
                     all_new_drops.extend(products)
