@@ -14,7 +14,7 @@ import random
 import threading
 import warnings
 import requests
-
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
@@ -29,6 +29,77 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 # Base directory for serving static files
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# =============================================================================
+# RSS FEED CONFIG
+# =============================================================================
+RSS_FEEDS = [
+    {"name": "GolfWRX", "url": "https://www.golfwrx.com/feed/", "icon": "wrx"},
+    {"name": "Skratch", "url": "https://www.skratch.golf/rss", "icon": "skratch"},
+]
+
+def fetch_rss_articles(max_per_feed=5):
+    """Fetch latest articles from RSS feeds"""
+    all_articles = []
+    
+    for feed in RSS_FEEDS:
+        try:
+            response = requests.get(feed["url"], headers=HEADERS, timeout=10)
+            if response.status_code != 200:
+                continue
+            
+            # Parse XML
+            root = ET.fromstring(response.content)
+            
+            # Handle both RSS 2.0 and Atom formats
+            items = root.findall('.//item') or root.findall('.//{http://www.w3.org/2005/Atom}entry')
+            
+            for item in items[:max_per_feed]:
+                try:
+                    # RSS 2.0 format
+                    title = item.find('title')
+                    link = item.find('link')
+                    pub_date = item.find('pubDate')
+                    description = item.find('description')
+                    
+                    # Try to get category
+                    category = item.find('category')
+                    
+                    # Try to get image from media:content or enclosure
+                    image_url = None
+                    media = item.find('.//{http://search.yahoo.com/mrss/}content')
+                    if media is not None:
+                        image_url = media.get('url')
+                    if not image_url:
+                        enclosure = item.find('enclosure')
+                        if enclosure is not None and 'image' in enclosure.get('type', ''):
+                            image_url = enclosure.get('url')
+                    
+                    if title is not None and link is not None:
+                        article = {
+                            "title": title.text.strip() if title.text else "",
+                            "url": link.text.strip() if link.text else "",
+                            "source": feed["name"],
+                            "icon": feed["icon"],
+                            "category": category.text if category is not None and category.text else "News",
+                            "image": image_url,
+                            "date": pub_date.text if pub_date is not None else None
+                        }
+                        
+                        # Clean up description for preview
+                        if description is not None and description.text:
+                            # Strip HTML tags
+                            clean_desc = re.sub(r'<[^>]+>', '', description.text)
+                            article["preview"] = clean_desc[:120].strip() + "..." if len(clean_desc) > 120 else clean_desc.strip()
+                        
+                        all_articles.append(article)
+                except Exception:
+                    continue
+                    
+        except Exception as e:
+            print(f"⚠️  RSS fetch failed for {feed['name']}: {e}")
+            continue
+    
+    return all_articles
 
 
 # =============================================================================
@@ -719,7 +790,7 @@ NEW_ARRIVALS_PATTERNS = [
 
 # Brands with known new arrivals pages (brand_name -> url)
 BRAND_NEW_ARRIVALS = {
-    # Manual overrides for brands with non-standard new arrivals URLs
+    # Lifestyle / Streetwear - most likely to have "new drops"
     "Malbon Golf": "https://www.malbongolf.com/collections/new-arrivals",
     "Eastside Golf": "https://www.eastsidegolf.com/collections/new-arrivals",
     "Sunday Red": "https://www.sundayred.com/collections/new-arrivals",
@@ -731,20 +802,28 @@ BRAND_NEW_ARRIVALS = {
     "Whim Golf": "https://whimgolf.com/collections/all",
     "Manors": "https://manorsgolf.com/collections/new-in",
     "Good Good Golf": "https://goodgood.com/collections/new-arrivals",
+    
+    # Premium Apparel
     "G/FORE": "https://www.gfore.com/collections/new-arrivals",
     "Greyson Clothiers": "https://www.greysonclothiers.com/collections/new-arrivals",
     "Peter Millar": "https://www.petermillar.com/new-arrivals/",
     "TravisMathew": "https://www.travismathew.com/collections/new-arrivals",
     "J.Lindeberg": "https://www.jlindeberg.com/us/new-arrivals",
     "Holderness & Bourne": "https://www.holderness-bourne.com/collections/new-arrivals",
+    
+    # Mid-tier
     "Rhoback": "https://rhoback.com/collections/new-arrivals",
     "Swannies": "https://swannies.co/collections/new-arrivals",
     "Bad Birdie": "https://badbirdie.com/collections/new-arrivals",
     "Linksoul": "https://linksoul.com/collections/new-arrivals",
+    
+    # Footwear
     "FootJoy": "https://www.footjoy.com/new-arrivals/",
     "TRUE Linkswear": "https://truelinkswear.com/collections/new-arrivals",
     "Cuater": "https://cuater.com/collections/new-arrivals",
     "Duca del Cosma": "https://ducadelcosma.us/collections/new-arrivals",
+    
+    # Equipment OEMs
     "Titleist": "https://www.titleist.com/new",
     "TaylorMade": "https://www.taylormadegolf.com/new/",
     "Callaway": "https://www.callawaygolf.com/new/",
@@ -753,50 +832,18 @@ BRAND_NEW_ARRIVALS = {
     "Cleveland Golf": "https://www.clevelandgolf.com/new/",
     "Mizuno Golf": "https://mizunogolf.com/us/new-arrivals/",
     "Srixon/Cleveland": "https://www.srixon.com/us/new-arrivals/",
+    
+    # Women's
     "Foray Golf": "https://foraygolf.com/collections/new-arrivals",
     "KINONA": "https://kinonasport.com/collections/new-arrivals",
     "Daily Sports": "https://us.dailysports.com/collections/new-arrivals",
+    
+    # Tech
     "Arccos Golf": "https://www.arccosgolf.com/collections/new",
+    
+    # Sugarloaf
     "Sugarloaf Social Club": "https://sugarloafsocialclub.com/collections/new-arrivals",
-    # Non-standard platforms with known URLs
-    "Nike Golf": "https://www.nike.com/w/new-golf-3glsmz3n82y",
-    "Adidas Golf": "https://www.adidas.com/us/new_arrivals-golf",
-    "PUMA Golf": "https://us.puma.com/us/en/golf/new-arrivals",
-    "Under Armour Golf": "https://www.underarmour.com/en-us/c/mens/golf/?newArrival=true",
-    "Oakley Golf": "https://www.oakley.com/en-us/category/golf/new-arrivals",
-    "PXG": "https://www.pxg.com/en-us/new",
 }
-
-# Skip these brands for drops (retailers/aggregators, not direct brands)
-DROPS_SKIP_BRANDS = {
-    "Amazon Golf", "Amazon Essentials Golf", "Dick's Sporting Goods", "Golf Galaxy",
-    "PGA Tour Superstore", "Rock Bottom Golf", "Golf Discount", "Budget Golf",
-    "2nd Swing", "3balls", "Carl's Golfland", "Golf Apparel Shop", "Golf Avenue",
-    "Golf Headquarters", "Golf Locker", "Golfers Warehouse", "Maple Hill Golf",
-    "Global Golf", "The Golf Warehouse", "Worldwide Golf Shops", "Scheels",
-    "Rain or Shine Golf", "Callaway Pre-Owned", "Five Iron Golf",
-    "Walter Hagen", "Trendy Golf",
-}
-
-
-def build_new_arrivals_urls():
-    """Auto-generate new arrivals URLs for all brands not in manual overrides.
-    Tries /collections/new-arrivals for Shopify-style stores."""
-    urls = dict(BRAND_NEW_ARRIVALS)  # Start with manual overrides
-    
-    for brand in BRANDS:
-        name = brand["name"]
-        if name in urls or name in DROPS_SKIP_BRANDS:
-            continue
-        
-        base_url = brand["url"].rstrip('/')
-        parsed = urlparse(base_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-        
-        # Try /collections/new-arrivals (works for most Shopify stores)
-        urls[name] = f"{base}/collections/new-arrivals"
-    
-    return urls
 
 # =============================================================================
 # IMPACT RADIUS API INTEGRATION
@@ -1247,14 +1294,6 @@ JUNK_PHRASES = [
     'your cart is empty', 'no items in', 'items in your cart',
     # Currency selectors
     'currency', 'usd $', 'eur €', 'gbp £',
-    # Product listing UI
-    'quick add', 'add to cart', 'add to bag', 'select size', 'choose size',
-    'pant waist', 'waist size', 'chest size', 'inseam',
-    # Error page content
-    'page you were looking for', 'could not be found', 'page not found', '404',
-    # Generic page titles (not promos)
-    'custom golf balls', 'discount golf equipment',
-    'redeem your discount',
 ]
 
 # Words that indicate this is likely a real promo
@@ -1270,44 +1309,23 @@ def is_junk_text(text):
     """Check if text is likely navigation/junk"""
     text_lower = text.lower()
     
-    # Too long
-    if len(text) > 300:
+    # Too short or too long
+    if len(text) < 15 or len(text) > 300:
         return True
     
-    # Very short — only OK if it has a clear promo signal
-    if len(text) < 5:
-        return True
-    if len(text) < 12:
-        has_signal = bool(re.search(r'\d+%', text) or re.search(r'\$\d', text) or 
-                         'free' in text_lower or 'off' in text_lower or 'save' in text_lower or
-                         'sale' in text_lower or 'clearance' in text_lower or 'bogo' in text_lower)
-        if not has_signal:
-            return True
-    
-    # Mostly junk phrases — but override if text has strong promo signals
+    # Mostly junk phrases
     junk_count = sum(1 for phrase in JUNK_PHRASES if phrase in text_lower)
     word_count = len(text.split())
     if junk_count > 2 or (junk_count > 0 and word_count < 8):
-        # Rescue if it has clear promo content
-        has_strong_signal = bool(
-            re.search(r'\d+%', text) or re.search(r'\$\d', text) or
-            re.search(r'\bfree shipping\b', text_lower) or
-            re.search(r'\bbogo\b', text_lower) or
-            re.search(r'\bbuy\s+\d+\b', text_lower)
-        )
-        if not has_strong_signal:
-            return True
+        return True
     
     # Too many pipes/bullets (likely navigation)
     if text.count('|') > 2 or text.count('•') > 2 or text.count('›') > 2:
         return True
     
-    # Mostly uppercase nav items — rescue if it has promo content
+    # Mostly uppercase nav items
     if text.isupper() and len(text) > 50:
-        has_promo = bool(re.search(r'\d+%', text) or re.search(r'\$\d', text) or
-                        re.search(r'\bfree\b', text_lower))
-        if not has_promo:
-            return True
+        return True
         
     return False
 
@@ -1373,229 +1391,6 @@ def clean_promo_text(text):
     text = text.strip(' .-|•')
     
     return text
-
-
-def sanitize_offer_copy(text):
-    """Strip marketing language from offer copy, keeping only structured facts.
-    
-    Legal requirement: Display only brand, discount %, dollar amount, code, 
-    expiration, and product scope. Remove superlatives, CTAs, urgency language, 
-    brand slogans, and promotional adjectives.
-    
-    Input:  "Spring Into Savings! Take an EXTRA 20% Off Sale Styles. Best Deals Guaranteed!"
-    Output: "Extra 20% off sale styles"
-    """
-    if not text:
-        return text or ""
-    
-    # Ensure we're working with a string
-    if not isinstance(text, str):
-        return str(text)
-    
-    text = ' '.join(text.split())
-    
-    # --- PHASE 1: Extract structured data before stripping ---
-    
-    # Extract promo codes (preserve them)
-    code_match = re.search(r'(?:code|coupon|promo)[:\s]+([A-Z0-9]{3,20})\b', text, re.IGNORECASE)
-    extracted_code = code_match.group(1).upper() if code_match else None
-    
-    # Extract expiration dates (preserve them)
-    exp_patterns = [
-        r'(?:ends?|expires?|through|until|valid through|good through)\s+(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)',
-        r'(?:ends?|expires?|through|until)\s+((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\.?\s+\d{1,2}(?:,?\s+\d{4})?)',
-    ]
-    extracted_exp = None
-    for pat in exp_patterns:
-        exp_match = re.search(pat, text, re.IGNORECASE)
-        if exp_match:
-            extracted_exp = exp_match.group(1).strip()
-            break
-    
-    # Extract dollar-off amounts
-    dollar_matches = re.findall(r'\$\d+(?:\.\d{2})?(?:\s*off)?', text, re.IGNORECASE)
-    
-    # Extract percentage discount patterns (keep "up to" qualifier)
-    pct_pattern = re.search(r'((?:up to|save|extra|additional|take)\s+)?(\d+)%\s*(off)?', text, re.IGNORECASE)
-    
-    # Extract BOGO patterns
-    bogo_match = re.search(r'(buy\s+\d+[,\s]+get\s+\d+\s*(?:free|%\s*off|\$\d+\s*off)?)', text, re.IGNORECASE)
-    
-    # Extract "free shipping" (keep as factual)
-    free_ship = bool(re.search(r'free\s+shipping', text, re.IGNORECASE))
-    
-    # Extract free gift patterns
-    free_gift_match = re.search(r'free\s+(gift|item|bonus|accessory|bag|towel|hat|headcover)\w*(?:\s+(?:with|on)\s+(?:orders?\s+(?:over|of)\s+\$\d+|purchase))?', text, re.IGNORECASE)
-    
-    # --- PHASE 2: Strip marketing language ---
-    
-    # Remove exclamation-heavy marketing phrases first
-    text = re.sub(r'[^.!?]*(?:don\'t miss|hurry|act now|limited time|while supplies last|today only|flash sale|last chance|won\'t last|selling fast|almost gone)[^.!?]*[.!?]?\s*', ' ', text, flags=re.IGNORECASE)
-    
-    # Remove marketing headline phrases (usually before the actual offer)
-    marketing_headlines = [
-        r'^[^%$]*?(?:into savings|biggest sale|sale of the (?:season|year)|celebrate|introducing|welcome to|we\'re celebrating|it\'s here|the wait is over|you\'re going to love)[^.!]*[.!:]\s*',
-        r'(?:our\s+)?(?:biggest|best|greatest|most\s+\w+|ultimate|incredible|amazing|unbelievable|exclusive|special|massive|huge|epic|mega|blowout|blockbuster)\s+(?:sale|deal|offer|event|savings|promotion|discount)s?\s*[.!:–-]?\s*',
-    ]
-    for pat in marketing_headlines:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE)
-    
-    # Remove superlative/marketing adjectives
-    superlatives = [
-        r'\b(?:guaranteed|unbeatable|incredible|amazing|awesome|fantastic|insane|crazy|spectacular|phenomenal|mind-blowing|jaw-dropping|game-changing|revolutionary|must-have|can\'t-miss)\s*',
-        r'\b(?:best(?:-selling)?|hottest|top-rated|highest-quality|premium|luxury|world-class|award-winning|customer-favorite)\s+(?=\w)',
-        r'\b(?:absolutely|literally|seriously|honestly|truly|definitely|undeniably)\s+',
-        # Standalone marketing adjectives before product/offer nouns
-        r'\b(?:massive|huge|epic|mega|insane|crazy|unreal|wild|sick)\s+(?=\d|up to|\$)',
-        r'\b(?:massive|huge|epic|mega|insane|crazy|unreal|wild|sick)\b\s*',
-    ]
-    for pat in superlatives:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE)
-    
-    # Remove CTAs and urgency phrases
-    cta_patterns = [
-        r'\bshop\s+(?:the\s+)?(?:\w+\s+)*?(?:now|today|deals?|sale|collection|savings?)(?:\s*[!.])?',
-        r'\b(?:buy|get|grab|score|snag|claim|unlock|discover|explore)\s+(?:now|today|it|them|this|these|yours)(?:\s*[!.])?',
-        r'\b(?:don\'t wait|act fast|limited (?:time|quantities?|stock)|while (?:they|it) last|ends? soon|going fast|prices? won\'t last)\b[^.]*[.!]?',
-        r'\b(?:treat yourself|you deserve|your (?:new )?favorite|you\'ll love|you won\'t (?:believe|regret))\b[^.]*[.!]?',
-        r'\byou\'ll\s+find\s+\w+\b',  # "you'll find anywhere"
-    ]
-    for pat in cta_patterns:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE)
-    
-    # Remove product listing UI junk (sizing, "quick add", variant selectors)
-    ui_junk_patterns = [
-        r'\bquick\s+add\b[^.]*',  # "QUICK ADD SMALL (PANT...)"
-        r'\(\s*(?:pant|waist|chest|neck|inseam|shoe)\s*(?:size)?\s*[^)]*\)',  # "(PANT WAIST SIZE 30 - 32)"
-        r'\b(?:small|medium|large|x-?large|xx-?large|xs|sm|md|lg|xl|xxl|2xl|3xl)\s*(?:\(|/|,\s*(?:small|medium|large))',  # Size lists
-        r'\b(?:select|choose)\s+(?:size|color|option)\b[^.]*',  # "Select size..."
-        r'\badd\s+to\s+(?:cart|bag|wishlist)\b',  # "Add to cart"
-        r'\b(?:in|at|during)\s+checkout\b',  # "in checkout", "at checkout"
-        r'\b(?:redeem|apply)\s+(?:your\s+)?(?:discount|offer|savings?)\s+(?:online\s+)?(?:in|at|during)\s+\w+\b',  # "REDEEM YOUR DISCOUNT ONLINE DURING CHECKOUT"
-    ]
-    for pat in ui_junk_patterns:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE)
-    
-    # Remove named sale headlines ("THE ARCHIVE SALE", "THE SPRING EVENT")
-    text = re.sub(r'\bthe\s+\w+\s+(?:sale|event|clearance)\s*[-–:]?\s*', '', text, flags=re.IGNORECASE)
-    
-    # Remove product description fragments (no promo value)
-    text = re.sub(r'\bfor\s+the\s+(?:looking|perfect|best|ideal|ultimate)\b[^.%$]*?(?:\.|$)', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\blooking\s+for\b[^.%$]*?(?:\.|$)', '', text, flags=re.IGNORECASE)
-    
-    # Remove possessive marketing ("our", "your")
-    text = re.sub(r'\b(?:our|your|my)\s+(?=(?:biggest|best|most|favorite|exclusive|special|annual|seasonal))', '', text, flags=re.IGNORECASE)
-    
-    # Remove "lowest prices" type claims
-    text = re.sub(r'\b(?:lowest|best)\s+prices?\s*(?:of the (?:year|season))?\s*(?:guaranteed)?\b', '', text, flags=re.IGNORECASE)
-    
-    # Remove promo code mentions (we'll re-add cleanly)
-    text = re.sub(r'(?:use|enter|apply|with)\s+(?:code|coupon|promo)\s+[A-Z0-9]{3,20}\b(?:\s+at\s+checkout)?', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'(?:code|coupon|promo)[:\s]+[A-Z0-9]{3,20}\b(?:\s+at\s+checkout)?', '', text, flags=re.IGNORECASE)
-    
-    # Remove expiration text (we'll re-add cleanly)
-    for pat in exp_patterns:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE)
-    
-    # Remove orphaned fragments left after aggressive stripping
-    orphan_patterns = [
-        r'\b(?:shop|get|find|see|view|check out)\s+the\s+(?:today|now)\b',  # "shop the today"
-        r'\byou\'ll\s+find\s+\w*\b',  # "you'll find anywhere"
-        r'\bat\s+checkout\b',  # orphaned "at checkout"
-        r'\bthe\s+(?:today|now)\b',  # "the today"
-        r'\bon\s+(?:the\s+)?(?:today|now)\b',  # "on today"
-        r'\bfor\s+(?:the|a)\s*$',  # trailing "for the"
-        r'^\s*(?:the|a|an|on|in|at|for|and|or|with|to)\s*$',  # lone prepositions as entire text
-        r'\b(?:the|a)\s+(?:the|a)\s+',  # double articles
-    ]
-    for pat in orphan_patterns:
-        text = re.sub(pat, '', text, flags=re.IGNORECASE)
-    
-    # --- PHASE 3: Clean up and reconstruct ---
-    
-    # Clean punctuation artifacts
-    text = re.sub(r'\s*[!]+', '.', text)  # ! → .
-    text = re.sub(r'\.{2,}', '.', text)   # Multiple dots
-    text = re.sub(r'\s*[-–—]+\s*[-–—]*\s*', ' - ', text)  # Normalize dashes
-    text = re.sub(r'\s*[|•]\s*', '. ', text)  # Pipe/bullet → period
-    text = re.sub(r'\.\s*\.', '.', text)   # Double periods
-    text = re.sub(r'^\s*[-–—.,:;]\s*', '', text)  # Leading punctuation
-    text = re.sub(r'\s+', ' ', text).strip(' .-–—,:;')
-    
-    # Remove sentences/fragments that are too short to be meaningful (under 4 words, no numbers)
-    if '. ' in text:
-        sentences = [s.strip() for s in text.split('. ')]
-        sentences = [s for s in sentences if len(s.split()) >= 3 or re.search(r'\d', s)]
-        text = '. '.join(sentences)
-    
-    # Strip trailing dangling prepositions/articles
-    text = re.sub(r'\s+(?:the|a|an|on|in|at|for|and|or|with|to)\s*\.?\s*$', '', text, flags=re.IGNORECASE)
-    text = text.strip(' .-–—,:;')
-    
-    # Capitalize first letter
-    if text:
-        text = text[0].upper() + text[1:]
-    
-    # Re-append structured data cleanly
-    parts = [text] if text else []
-    
-    if extracted_code:
-        # Only add code if not already embedded naturally
-        if extracted_code.lower() not in text.lower():
-            parts.append(f"Code: {extracted_code}")
-    
-    if extracted_exp:
-        parts.append(f"Ends {extracted_exp}")
-    
-    result = '. '.join(p.strip(' .') for p in parts if p.strip(' .'))
-    
-    # Final cleanup
-    result = re.sub(r'\.\s*\.', '.', result)
-    result = re.sub(r'\s+', ' ', result).strip()
-    
-    # If we stripped everything meaningful, fall back to reconstructed basics
-    # Also fall back if remaining text has no promo signal (just product descriptions)
-    has_promo_signal = bool(
-        re.search(r'\d+%', result) or           # percentage
-        re.search(r'\$\d+', result) or           # dollar amount
-        re.search(r'\bfree\b', result, re.I) or  # free shipping/gift
-        re.search(r'\bbogo\b', result, re.I) or  # buy one get one
-        re.search(r'\bbuy\s+\d+', result, re.I) or  # buy X get Y
-        re.search(r'\boff\b', result, re.I) or   # X off
-        re.search(r'\bsave\b', result, re.I) or  # save X
-        re.search(r'\bsale\b', result, re.I) or  # sale
-        re.search(r'\bclearance\b', result, re.I) or  # clearance
-        re.search(r'\bspecial', result, re.I) or  # specials
-        re.search(r'\bdiscount', result, re.I) or  # discount
-        re.search(r'\bdeal', result, re.I) or     # deal/deals
-        extracted_code                            # has a promo code
-    )
-    
-    if not result or len(result) < 5 or not has_promo_signal:
-        fragments = []
-        if pct_pattern:
-            qualifier = (pct_pattern.group(1) or '').strip()
-            pct = pct_pattern.group(2)
-            fragments.append(f"{qualifier} {pct}% off".strip().capitalize())
-        elif dollar_matches:
-            fragments.append(dollar_matches[0] + (' off' if 'off' not in dollar_matches[0].lower() else ''))
-        elif bogo_match:
-            fragments.append(bogo_match.group(1).strip().capitalize())
-        elif free_ship:
-            fragments.append("Free shipping")
-        elif free_gift_match:
-            fragments.append(free_gift_match.group(0).strip().capitalize())
-        else:
-            fragments.append("Sale")
-        
-        if extracted_code:
-            fragments.append(f"Code: {extracted_code}")
-        if extracted_exp:
-            fragments.append(f"Ends {extracted_exp}")
-        
-        result = '. '.join(fragments)
-    
-    return result[:150]
 
 
 def matches_promo(text):
@@ -2292,101 +2087,86 @@ def scrape_brand(brand):
 
 def run_scraper():
     """Run full scrape of all brands"""
-    try:
-        print(f"\n{'='*60}")
-        print(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"📡 Scanning {len(BRANDS)} brands...")
-        print(f"{'='*60}")
-        
-        results = []
-        clearance_results = []
-        impact_deals = []
-        success_count = 0
-        error_count = 0
-        
-        # Concurrent brand scraping
-        with ThreadPoolExecutor(max_workers=20) as executor:
-            future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
-            for i, future in enumerate(as_completed(future_to_brand), 1):
-                brand = future_to_brand[future]
-                try:
-                    result = future.result()
-                    if result["error"]:
-                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
-                        error_count += 1
-                    elif result["promo"]:
-                        code_str = f" (code: {result['code']})" if result['code'] else ""
-                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
-                        success_count += 1
-                        results.append(result)
-                    else:
-                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
-                        results.append(result)
-                except Exception as e:
-                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
-                    error_count += 1
-        
-        # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
-        print(f"\n{'='*60}")
-        print(f"🏷️  Scanning sale pages...")
-        print(f"{'='*60}")
-        
-        try:
-            clearance_results = scan_sale_pages(BRANDS)
-        except Exception as e:
-            print(f"⚠️  Sale page scan failed: {e}")
-            clearance_results = []
-        
-        # Fetch Impact deals
-        print(f"\n{'='*60}")
-        print(f"🔗 Fetching Impact Radius deals...")
-        print(f"{'='*60}")
-        
-        try:
-            if impact_api:
-                impact_deals = impact_api.get_all_deals()
-                print(f"✅ Found {len(impact_deals)} deals from Impact")
-            else:
-                print("⚠️  Impact API not available")
-        except Exception as e:
-            print(f"⚠️  Impact deals fetch failed: {e}")
-            impact_deals = []
-        
-        # Scan for new drops / new arrivals
-        # Brief delay to reduce 429s — main scraper just hit many of these same domains
-        print(f"\n{'='*60}")
-        print(f"🆕 Scanning new arrivals pages (5s cooldown)...")
-        print(f"{'='*60}")
-        time.sleep(5)
-        
-        new_drops = []
-        try:
-            new_drops = scrape_all_new_arrivals()
-        except Exception as e:
-            print(f"⚠️  New arrivals scan failed: {e}")
-            new_drops = []
-        
-        print(f"\n{'='*60}")
-        print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
-        print(f"{'='*60}\n")
-        
-        # Always save main results even if clearance/impact fails
-        if results:
-            try:
-                save_data(results, clearance_results, impact_deals, new_drops)
-            except Exception as e:
-                print(f"❌ CRITICAL: save_data failed: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        return results
+    print(f"\n{'='*60}")
+    print(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📡 Scanning {len(BRANDS)} brands...")
+    print(f"{'='*60}")
     
+    results = []
+    clearance_results = []
+    impact_deals = []
+    success_count = 0
+    error_count = 0
+    
+    # Concurrent brand scraping
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
+        for i, future in enumerate(as_completed(future_to_brand), 1):
+            brand = future_to_brand[future]
+            try:
+                result = future.result()
+                if result["error"]:
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
+                    error_count += 1
+                elif result["promo"]:
+                    code_str = f" (code: {result['code']})" if result['code'] else ""
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
+                    success_count += 1
+                    results.append(result)
+                else:
+                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
+                    results.append(result)
+            except Exception as e:
+                print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
+                error_count += 1
+    
+    # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
+    print(f"\n{'='*60}")
+    print(f"🏷️  Scanning sale pages...")
+    print(f"{'='*60}")
+    
+    try:
+        clearance_results = scan_sale_pages(BRANDS)
     except Exception as e:
-        # Top-level catch: prevents APScheduler from silently killing the job
-        print(f"❌ CRITICAL: run_scraper crashed: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+        print(f"⚠️  Sale page scan failed: {e}")
+        clearance_results = []
+    
+    # Fetch Impact deals
+    print(f"\n{'='*60}")
+    print(f"🔗 Fetching Impact Radius deals...")
+    print(f"{'='*60}")
+    
+    try:
+        if impact_api:
+            impact_deals = impact_api.get_all_deals()
+            print(f"✅ Found {len(impact_deals)} deals from Impact")
+        else:
+            print("⚠️  Impact API not available")
+    except Exception as e:
+        print(f"⚠️  Impact deals fetch failed: {e}")
+        impact_deals = []
+    
+    # Scan for new drops / new arrivals
+    print(f"\n{'='*60}")
+    print(f"🆕 Scanning new arrivals pages...")
+    print(f"{'='*60}")
+    
+    new_drops = []
+    try:
+        new_drops = scrape_all_new_arrivals()
+    except Exception as e:
+        print(f"⚠️  New arrivals scan failed: {e}")
+        new_drops = []
+    
+    print(f"\n{'='*60}")
+    print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
+    print(f"{'='*60}\n")
+    
+    # Always save main results even if clearance/impact fails
+    if results:
+        save_data(results, clearance_results, impact_deals, new_drops)
+    
+    return results
 
 
 def mine_sitemap_for_sale_urls(base_url, max_urls=5):
@@ -2639,7 +2419,6 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
     try:
         response = requests.get(new_arrivals_url, headers=get_headers(), timeout=8, allow_redirects=True)
         if response.status_code != 200:
-            print(f"  ⚠️  {brand_name}: HTTP {response.status_code}")
             return []
         
         soup = BeautifulSoup(response.text, 'lxml')
@@ -2650,54 +2429,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
         
         products = []
         
-        # --- Strategy 1: JSON-LD product data (works on Shopify + many others) ---
-        json_ld_scripts = soup.select('script[type="application/ld+json"]')
-        for script_tag in json_ld_scripts:
-            try:
-                ld_data = json.loads(script_tag.string or '{}')
-                # Handle both single objects and arrays
-                items = ld_data if isinstance(ld_data, list) else [ld_data]
-                for item in items:
-                    # ItemList with ListElements
-                    if item.get('@type') == 'ItemList':
-                        for elem in item.get('itemListElement', []):
-                            product = elem if elem.get('@type') == 'Product' else elem.get('item', {})
-                            if product.get('name'):
-                                price = None
-                                offers = product.get('offers', {})
-                                if isinstance(offers, list) and offers:
-                                    offers = offers[0]
-                                if offers.get('price'):
-                                    price = f"${offers['price']}"
-                                products.append({
-                                    "name": product['name'][:100],
-                                    "url": product.get('url', new_arrivals_url),
-                                    "image": product.get('image', [None])[0] if isinstance(product.get('image'), list) else product.get('image'),
-                                    "price": price,
-                                    "brand": brand_name,
-                                })
-                    # Direct Product type
-                    elif item.get('@type') == 'Product' and item.get('name'):
-                        price = None
-                        offers = item.get('offers', {})
-                        if isinstance(offers, list) and offers:
-                            offers = offers[0]
-                        if offers.get('price'):
-                            price = f"${offers['price']}"
-                        products.append({
-                            "name": item['name'][:100],
-                            "url": item.get('url', new_arrivals_url),
-                            "image": item.get('image', [None])[0] if isinstance(item.get('image'), list) else item.get('image'),
-                            "price": price,
-                            "brand": brand_name,
-                        })
-            except (json.JSONDecodeError, TypeError, KeyError):
-                continue
-        
-        if products:
-            return products[:12]
-        
-        # --- Strategy 2: DOM selectors (Shopify + common patterns) ---
+        # Common product card selectors
         product_selectors = [
             '[class*="product-card"]',
             '[class*="product-item"]',
@@ -2708,13 +2440,6 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
             '.product',
             'article[class*="product"]',
             '[class*="collection-product"]',
-            # Non-Shopify patterns
-            '[class*="plp-card"]',        # Common PLP card pattern
-            '[class*="product-listing"]',
-            '[class*="ProductTile"]',
-            '[class*="product_card"]',
-            '[class*="productCard"]',
-            'li[class*="product"]',
         ]
         
         product_elements = []
@@ -2727,14 +2452,6 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
         if not product_elements:
             # Fallback: look for product links
             product_elements = soup.select('a[href*="/products/"]')[:12]
-        
-        if not product_elements:
-            # Broader fallback: links with product-like URLs
-            product_elements = soup.select('a[href*="/product/"], a[href*="/p/"], a[href*="/shop/"]')[:12]
-        
-        if not product_elements:
-            print(f"  ○  {brand_name}: 200 OK but no product elements matched")
-            return []
         
         for elem in product_elements:
             try:
@@ -2765,7 +2482,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
                 if elem.name == 'a':
                     product_url = elem.get('href', '')
                 else:
-                    link = elem.select_one('a[href*="/products/"], a[href*="/product/"], a[href]')
+                    link = elem.select_one('a[href*="/products/"], a[href*="/product/"]')
                     if link:
                         product_url = link.get('href', '')
                 
@@ -2820,9 +2537,8 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 
 
 def scrape_all_new_arrivals():
-    """Scrape new arrivals from all brands (concurrent)"""
-    all_urls = build_new_arrivals_urls()
-    print(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
+    """Scrape new arrivals from all brands with known new arrivals pages (concurrent)"""
+    print(f"\n🆕 Scanning {len(BRAND_NEW_ARRIVALS)} brands for new drops...")
     
     all_new_drops = []
     
@@ -2830,15 +2546,15 @@ def scrape_all_new_arrivals():
         brand_name, url = item
         return brand_name, scrape_new_arrivals_page(brand_name, url)
     
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(scrape_brand_arrivals, item): item for item in all_urls.items()}
+    with ThreadPoolExecutor(max_workers=15) as executor:
+        futures = {executor.submit(scrape_brand_arrivals, item): item for item in BRAND_NEW_ARRIVALS.items()}
         for future in as_completed(futures):
             try:
                 brand_name, products = future.result()
                 if products:
                     print(f"  🆕 {brand_name}: {len(products)} new products")
                     for p in products:
-                        p["source_url"] = all_urls[brand_name]
+                        p["source_url"] = BRAND_NEW_ARRIVALS[brand_name]
                         p["category"] = next((b.get("category", "apparel") for b in BRANDS if b["name"] == brand_name), "apparel")
                         p["tags"] = next((b.get("tags", []) for b in BRANDS if b["name"] == brand_name), [])
                     all_new_drops.extend(products)
@@ -2848,14 +2564,6 @@ def scrape_all_new_arrivals():
     
     print(f"🆕 Found {len(all_new_drops)} total new products")
     return all_new_drops
-
-
-def _safe_sanitize(text):
-    """Wrapper around sanitize_offer_copy that never throws"""
-    try:
-        return sanitize_offer_copy(text)
-    except Exception:
-        return text
 
 
 def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
@@ -2899,28 +2607,6 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     new_clearance = sum(1 for c in fresh_clearance if c.get("is_new"))
     new_impact = sum(1 for d in fresh_impact if d.get("is_new"))
     
-    # === LEGAL COMPLIANCE: Sanitize offer copy ===
-    # Strip marketing language from all promo text.
-    # Display only structured facts: discount, code, scope, expiration.
-    for p in fresh_promos:
-        if p.get("promo"):
-            try:
-                p["promo"] = sanitize_offer_copy(p["promo"])
-            except Exception as e:
-                print(f"⚠️  Sanitize failed for {p.get('brand','?')}: {e}")
-    for c in fresh_clearance:
-        if c.get("promo"):
-            try:
-                c["promo"] = sanitize_offer_copy(c["promo"])
-            except Exception as e:
-                print(f"⚠️  Sanitize failed for clearance {c.get('brand','?')}: {e}")
-    for d in fresh_impact:
-        if d.get("promo"):
-            try:
-                d["promo"] = sanitize_offer_copy(d["promo"])
-            except Exception as e:
-                print(f"⚠️  Sanitize failed for impact {d.get('brand','?')}: {e}")
-    
     data = {
         "lastUpdated": datetime.now().isoformat(),
         "criticalHitIndex": critical_hit_index,
@@ -2941,7 +2627,7 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         "emailOffers": [
             {
                 "brand": p["brand"], 
-                "offer": _safe_sanitize(p["email_offer"]), 
+                "offer": p["email_offer"], 
                 "method": "Website", 
                 "url": p.get("url"), 
                 "affiliate_url": p.get("affiliate_url")
@@ -2952,6 +2638,7 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         "impactDeals": fresh_impact,
         "newDrops": fresh_drops,  # New arrivals/releases with freshness tracking
         "tacticalNukes": [],  # Will be populated below
+        "articles": [],  # Will be populated below
         "communityIntel": []  # Will be populated below
     }
     
@@ -2965,16 +2652,19 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     except Exception as e:
         print(f"⚠️  Tactical Nukes config load failed: {e}")
     
+    # Fetch RSS articles
+    try:
+        articles = fetch_rss_articles(max_per_feed=5)
+        if articles:
+            data["articles"] = articles
+            print(f"📰 Fetched {len(articles)} articles from RSS feeds")
+    except Exception as e:
+        print(f"⚠️  RSS fetch failed: {e}")
+    
     # Fetch Reddit community intel
     try:
         reddit_intel = fetch_reddit_intel(limit=15)
         if reddit_intel:
-            for r in reddit_intel:
-                if r.get("promo"):
-                    try:
-                        r["promo"] = sanitize_offer_copy(r["promo"])
-                    except Exception as e:
-                        print(f"⚠️  Sanitize failed for reddit {r.get('brand','?')}: {e}")
             data["communityIntel"] = reddit_intel
             print(f"🔴 Reddit Intel: {len(reddit_intel)} community deals found")
     except Exception as e:
@@ -2996,6 +2686,7 @@ def load_data():
         "clearance": [],
         "impactDeals": [],
         "tacticalNukes": [],
+        "articles": [],
         "communityIntel": [],
         "newDrops": []
     }
