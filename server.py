@@ -1329,8 +1329,11 @@ JUNK_PHRASES = [
     # Product listing markup (not promos)
     'sale price $', 'regular price $', 'unit price', 'regular price from',
     'sale price regular price',
+    'sale price', 'regular price',
     # Sign-up CTAs mixed into promos
     'sign up for text alerts', 'sign up for sms',
+    # UI controls leaking into text
+    'pause slideshow', 'play slideshow', 'slide of',
 ]
 
 
