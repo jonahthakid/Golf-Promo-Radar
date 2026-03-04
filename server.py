@@ -7,7 +7,7 @@ Integrates with Impact Radius for affiliate tracking + deals
 
 import json
 import re
-import os
+import o
 import time
 import fcntl
 import random
