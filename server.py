@@ -1319,6 +1319,13 @@ JUNK_PHRASES = [
     # Generic page titles (not promos)
     'custom golf balls', 'discount golf equipment',
     'redeem your discount',
+    # Non-promo content that triggers false positives
+    'previous free shipping',
+    'wholesale account', 'click here to login', 'click here to log in',
+    'have a wholesale',
+    'regular price sale price',
+    'best looking golf bag', 'for the best looking',
+    'guaranteed. golf',
 ]
 
 
