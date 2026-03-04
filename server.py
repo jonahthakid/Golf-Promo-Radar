@@ -1326,6 +1326,11 @@ JUNK_PHRASES = [
     'regular price sale price',
     'best looking golf bag', 'for the best looking',
     'guaranteed. golf',
+    # Product listing markup (not promos)
+    'sale price $', 'regular price $', 'unit price', 'regular price from',
+    'sale price regular price',
+    # Sign-up CTAs mixed into promos
+    'sign up for text alerts', 'sign up for sms',
 ]
 
 
@@ -1436,7 +1441,9 @@ def clean_promo_text(text):
     # Remove common prefix/suffix junk
     remove_patterns = [
         r'^(skip to content|menu|close|open)\s*',
+        r'^previous\s+',  # "PREVIOUS Free Shipping..." or "PREVIOUS SSC x THE PLAYERS..."
         r'\s*(shop now|learn more|view all|see details)\.?\s*$',
+        r'\s*(sign up for (?:text|sms|email)[\w\s]*)$',  # Strip trailing "sign up for text alerts..."
         r'\s*\|\s*(shop now|learn more).*$',
         r'^\s*\d+\s+(items?|products?)\s*',
     ]
