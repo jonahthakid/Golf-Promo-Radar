@@ -2740,7 +2740,7 @@ def classic():
 def widget():
     return send_from_directory(BASE_DIR, 'widget.html')
 
-@app.route('/privacy')
+@app.route('/privacy-policy')
 def privacy():
     return send_from_directory(BASE_DIR, 'privacy.html')
 
