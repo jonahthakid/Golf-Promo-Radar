@@ -505,7 +505,7 @@ BRANDS = [
     # ==========================================================================
     # MAJOR ATHLETIC BRANDS
     # ==========================================================================
-    {"name": "Nike Golf", "url": "https://www.nike.com/w/golf-3glsm", "category": "apparel", "tags": ["major", "athletic"]},
+    {"name": "Nike Golf", "url": "https://www.nike.com/w/golf-23q9w", "category": "apparel", "tags": ["major", "athletic"]},
     {"name": "Adidas Golf", "url": "https://www.adidas.com/us/golf", "category": "apparel", "tags": ["major", "athletic"]},
     {"name": "Under Armour Golf", "url": "https://www.underarmour.com/en-us/c/mens/golf/", "category": "apparel", "tags": ["major", "athletic"]},
     {"name": "PUMA Golf", "url": "https://us.puma.com/us/en/golf", "category": "apparel", "tags": ["major", "athletic", "rickie"]},
@@ -585,7 +585,7 @@ BRANDS = [
     {"name": "Linksoul", "url": "https://linksoul.com", "category": "apparel", "tags": ["mid-tier", "sustainable"]},
     {"name": "Vuori", "url": "https://vuoriclothing.com", "category": "apparel", "tags": ["mid-tier", "activewear"]},
     {"name": "Rhone", "url": "https://www.rhone.com", "category": "apparel", "tags": ["mid-tier", "performance"]},
-    {"name": "Bonobos Golf", "url": "https://bonobos.com/shop/golf", "category": "apparel", "tags": ["mid-tier", "pants"]},
+    {"name": "Bonobos Golf", "url": "https://bonobos.com/shop/sports-golf", "category": "apparel", "tags": ["mid-tier", "pants"]},
     {"name": "Original Penguin Golf", "url": "https://www.originalpenguin.com/collections/golf", "category": "apparel", "tags": ["mid-tier", "heritage"]},
     {"name": "Walter Hagen", "url": "https://www.dickssportinggoods.com/f/walter-hagen-golf-apparel", "category": "apparel", "tags": ["value", "dicks"]},
     {"name": "PGA TOUR Apparel", "url": "https://pgatour.com/shop", "category": "apparel", "tags": ["value", "tour"]},
@@ -806,7 +806,7 @@ BRAND_NEW_ARRIVALS = {
     "Arccos Golf": "https://www.arccosgolf.com/collections/new",
     "Sugarloaf Social Club": "https://sugarloafsocialclub.com/collections/new-arrivals",
     # Non-standard platforms with known URLs
-    "Nike Golf": "https://www.nike.com/w/new-golf-3glsmz3n82y",
+    "Nike Golf": "https://www.nike.com/w/new-golf-23q9wz3n82y",
     "Adidas Golf": "https://www.adidas.com/us/new_arrivals-golf",
     "PUMA Golf": "https://us.puma.com/us/en/golf/new-arrivals",
     "Under Armour Golf": "https://www.underarmour.com/en-us/c/mens/golf/?newArrival=true",
@@ -1329,7 +1329,6 @@ JUNK_PHRASES = [
     # Product listing markup (not promos)
     'sale price $', 'regular price $', 'unit price', 'regular price from',
     'sale price regular price',
-    'sale price', 'regular price',
     # Sign-up CTAs mixed into promos
     'sign up for text alerts', 'sign up for sms',
     # UI controls leaking into text
@@ -1351,6 +1350,10 @@ PROMO_BOOST_WORDS = [
 def is_junk_text(text):
     """Check if text is likely navigation/junk"""
     text_lower = text.lower()
+    
+    # Immediately reject product pricing markup (regardless of $ signals)
+    if re.search(r'(?:sale|regular|unit|list)\s+price\s*\$?\d', text_lower):
+        return True
     
     # Too long
     if len(text) > 300:
@@ -1445,6 +1448,8 @@ def clean_promo_text(text):
     remove_patterns = [
         r'^(skip to content|menu|close|open)\s*',
         r'^previous\s+',  # "PREVIOUS Free Shipping..." or "PREVIOUS SSC x THE PLAYERS..."
+        r'^(pause|play)\s+slideshow\s*',  # Slideshow UI controls
+        r'(pause|play)\s+slideshow\s*',   # Also catch mid-text
         r'\s*(shop now|learn more|view all|see details)\.?\s*$',
         r'\s*(sign up for (?:text|sms|email)[\w\s]*)$',  # Strip trailing "sign up for text alerts..."
         r'\s*\|\s*(shop now|learn more).*$',
