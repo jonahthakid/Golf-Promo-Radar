@@ -937,7 +937,7 @@ class ImpactAPI:
         return []
     
     def get_featured_products(self, count=4):
-        """Get featured products for Tactical Nukes section.
+        """Get featured products for Priority Intel section.
         Only returns real catalog products with images."""
         
         # Golf-related keywords to filter products
@@ -2822,19 +2822,19 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         "clearance": fresh_clearance,
         "impactDeals": fresh_impact,
         "newDrops": fresh_drops,  # New arrivals/releases with freshness tracking
-        "tacticalNukes": [],  # Will be populated below
+        "priorityIntel": [],  # Will be populated below
         "communityIntel": []  # Will be populated below
     }
     
-    # Load tactical nukes from JSON config file (editor-curated)
+    # Load Priority Intel from JSON config file (editor-curated)
     try:
-        nukes_file = os.path.join(os.path.dirname(__file__), 'tactical_nukes.json')
-        if os.path.exists(nukes_file):
-            with open(nukes_file) as f:
-                data["tacticalNukes"] = json.load(f)
-                print(f"🎯 Tactical Nukes: {len(data['tacticalNukes'])} products loaded from config")
+        intel_file = os.path.join(os.path.dirname(__file__), 'priority_intel.json')
+        if os.path.exists(intel_file):
+            with open(intel_file) as f:
+                data["priorityIntel"] = json.load(f)
+                print(f"🎯 Priority Intel: {len(data['priorityIntel'])} products loaded from config")
     except Exception as e:
-        print(f"⚠️  Tactical Nukes config load failed: {e}")
+        print(f"⚠️  Priority Intel config load failed: {e}")
     
     # Fetch Reddit community intel
     try:
@@ -2862,7 +2862,7 @@ def load_data():
         "emailOffers": [],
         "clearance": [],
         "impactDeals": [],
-        "tacticalNukes": [],
+        "priorityIntel": [],
         "communityIntel": [],
         "newDrops": []
     }
