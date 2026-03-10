@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RADAR - Golf Deals, Promo Codes & New Drops</title>
     <meta name="description" content="Live golf deals from 170+ brands. Promo codes, clearance alerts, and new product drops updated every 10 minutes.">
-    <link rel="canonical" href="https://radar.golf/">
+    <link rel="canonical" href="https://www.radar.golf/">
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="apple-touch-icon" href="/favicon.png">
 
@@ -13,15 +13,15 @@
     <meta property="og:title" content="RADAR - Golf Deals, Promo Codes & New Drops">
     <meta property="og:description" content="Live golf deals from 170+ brands. Promo codes, clearance alerts, and new drops updated every 10 minutes.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://radar.golf/">
+    <meta property="og:url" content="https://www.radar.golf/">
     <meta property="og:site_name" content="RADAR">
-    <meta property="og:image" content="https://radar.golf/radar_og.png">
+    <meta property="og:image" content="https://www.radar.golf/radar_og.png">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="RADAR - Golf Deals, Promo Codes & New Drops">
     <meta name="twitter:description" content="Live golf deals from 170+ brands updated every 10 minutes.">
-    <meta name="twitter:image" content="https://radar.golf/radar_og.png">
+    <meta name="twitter:image" content="https://www.radar.golf/radar_og.png">
     
     <!-- Google Analytics 4 -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-S5EFWGS132"></script>
@@ -430,22 +430,22 @@
             <!-- Featured Deal (Critical Hit) - Will be populated dynamically -->
             <div id="featured-deal" class="hidden"></div>
 
-            <!-- Tactical Nukes Section - Dynamic from Impact -->
-            <div id="tactical-nukes-section" class="mb-8 hidden">
+            <!-- Priority Intel Section - Dynamic from Impact -->
+            <div id="priority-intel-section" class="mb-8 hidden">
                 <div class="flex items-center gap-3 mb-4">
                     <div class="w-8 h-8 bg-radar-red rounded-sm flex items-center justify-center">
                         <i class="fas fa-radiation text-black"></i>
                     </div>
-                    <h3 class="font-loud text-2xl text-white tracking-wider">TACTICAL NUKES</h3>
+                    <h3 class="font-loud text-2xl text-white tracking-wider">PRIORITY INTEL</h3>
                     <div class="flex-1 h-px bg-radar-grid"></div>
                     <span class="text-gray-600 text-xs font-tech">EDITOR'S PICKS</span>
                 </div>
                 
-                <div id="tactical-nukes-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div id="priority-intel-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <!-- Products populated by JS -->
                 </div>
                 
-                <button id="tactical-nukes-toggle" onclick="toggleTacticalNukes()" class="hidden w-full mt-3 py-2 border border-radar-grid text-gray-500 hover:text-radar-green hover:border-radar-green transition-colors font-tech text-sm">
+                <button id="priority-intel-toggle" onclick="togglePriorityIntel()" class="hidden w-full mt-3 py-2 border border-radar-grid text-gray-500 hover:text-radar-green hover:border-radar-green transition-colors font-tech text-sm">
                     <i class="fas fa-chevron-down mr-2"></i>VIEW ALL
                 </button>
             </div>
@@ -538,7 +538,7 @@
         // =================================================================
         // STATE
         // =================================================================
-        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], tacticalNukes: [], articles: [], newDrops: [] };
+        let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], priorityIntel: [], articles: [], newDrops: [] };
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -646,13 +646,19 @@
         }
 
         // =================================================================
-        // ZULU CLOCK
+        // EST CLOCK
         // =================================================================
         function updateClock() {
             const now = new Date();
-            const timeString = now.toISOString().substr(11, 8);
+            const timeString = now.toLocaleTimeString('en-US', {
+                timeZone: 'America/New_York',
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
             const zuluEl = document.getElementById('zulu-clock');
-            if (zuluEl) zuluEl.innerText = timeString;
+            if (zuluEl) zuluEl.innerText = timeString + ' EST';
         }
         setInterval(updateClock, 1000);
         updateClock();
@@ -876,8 +882,8 @@
                 featured.innerHTML = '';
             }
             
-            // Render Tactical Nukes section
-            renderTacticalNukes();
+            // Render Priority Intel section
+            renderPriorityIntel();
 
             // Grid
             if (promos.length === 0) {
@@ -1345,16 +1351,16 @@
         }
 
         // =================================================================
-        // RENDER TACTICAL NUKES (Editor-curated)
+        // RENDER PRIORITY INTEL (Editor-curated)
         // =================================================================
-        let tacticalNukesExpanded = false;
+        let priorityIntelExpanded = false;
         
-        function renderTacticalNukes() {
-            const section = document.getElementById('tactical-nukes-section');
-            const grid = document.getElementById('tactical-nukes-grid');
-            const toggleBtn = document.getElementById('tactical-nukes-toggle');
+        function renderPriorityIntel() {
+            const section = document.getElementById('priority-intel-section');
+            const grid = document.getElementById('priority-intel-grid');
+            const toggleBtn = document.getElementById('priority-intel-toggle');
             
-            const allNukes = promoData.tacticalNukes || [];
+            const allNukes = promoData.priorityIntel || [];
             
             if (allNukes.length === 0) {
                 section.classList.add('hidden');
@@ -1364,12 +1370,12 @@
             section.classList.remove('hidden');
             
             // Show 4 initially, or all if expanded
-            const nukes = tacticalNukesExpanded ? allNukes : allNukes.slice(0, 4);
+            const nukes = priorityIntelExpanded ? allNukes : allNukes.slice(0, 4);
             
             // Show/hide toggle button
             if (allNukes.length > 4) {
                 toggleBtn.classList.remove('hidden');
-                toggleBtn.innerHTML = tacticalNukesExpanded 
+                toggleBtn.innerHTML = priorityIntelExpanded 
                     ? '<i class="fas fa-chevron-up mr-2"></i>SHOW LESS'
                     : `<i class="fas fa-chevron-down mr-2"></i>VIEW ALL (${allNukes.length})`;
             } else {
@@ -1401,7 +1407,7 @@
                     ? `<a href="${p.review_url}" target="_blank" rel="noopener" class="absolute top-2 right-2 bg-black/70 text-radar-green text-[10px] font-bold px-1.5 py-0.5 hover:bg-radar-green hover:text-black transition-colors" onclick="event.stopPropagation()">READ REVIEW</a>`
                     : '';
                 
-                const trackedUrl = trackUrl(p.affiliate_url, p.brand || p.name, 'tactical-nukes');
+                const trackedUrl = trackUrl(p.affiliate_url, p.brand || p.name, 'priority-intel');
                 return `
                 <a href="${trackedUrl}" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 overflow-hidden">
                     <div class="aspect-square bg-gray-900 relative overflow-hidden">
@@ -1421,9 +1427,9 @@
             `}).join('');
         }
         
-        function toggleTacticalNukes() {
-            tacticalNukesExpanded = !tacticalNukesExpanded;
-            renderTacticalNukes();
+        function togglePriorityIntel() {
+            priorityIntelExpanded = !priorityIntelExpanded;
+            renderPriorityIntel();
         }
 
         // =================================================================
