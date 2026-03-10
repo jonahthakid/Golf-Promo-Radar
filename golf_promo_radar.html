@@ -539,6 +539,7 @@
         // STATE
         // =================================================================
         let promoData = { promos: [], codes: [], emailOffers: [], clearance: [], impactDeals: [], priorityIntel: [], articles: [], newDrops: [] };
+        let allBrands = [];
         let currentFilter = 'all';
         let currentTab = 'promos';
         let searchQuery = '';
@@ -684,6 +685,15 @@
                 log('FETCHING BRAND DATA...');
                 const response = await fetch('/api/promos');
                 const data = await response.json();
+                
+                // Fetch full brand list once
+                if (allBrands.length === 0) {
+                    try {
+                        const brandRes = await fetch('/api/brands');
+                        const brandData = await brandRes.json();
+                        allBrands = brandData.brands || [];
+                    } catch (e) { console.error('Brand list fetch failed:', e); }
+                }
                 
                 // Check for new deals (skip on initial page load)
                 if (!isInitialLoad) {
@@ -887,6 +897,42 @@
 
             // Grid
             if (promos.length === 0) {
+                // If searching, check if any brands match and show fallback cards
+                if (searchQuery && allBrands.length > 0) {
+                    const q = searchQuery.toLowerCase();
+                    const matchedBrands = allBrands.filter(b => 
+                        b.name.toLowerCase().includes(q) || 
+                        b.category?.toLowerCase().includes(q)
+                    );
+                    
+                    if (matchedBrands.length > 0) {
+                        grid.innerHTML = matchedBrands.map(b => {
+                            const initials = b.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+                            const linkUrl = trackUrl(b.affiliate_url || b.url, b.name, 'brand-explore');
+                            return `
+                            <a href="${linkUrl}" target="_blank" rel="noopener" class="group bg-radar-dark border border-radar-grid hover:border-radar-green transition-all duration-300 rounded-sm p-5">
+                                <div class="flex items-center gap-4 mb-3">
+                                    <div class="w-12 h-12 bg-white rounded flex items-center justify-center shrink-0">
+                                        <span class="font-loud text-lg text-black">${initials}</span>
+                                    </div>
+                                    <div>
+                                        <div class="font-loud text-xl text-white group-hover:text-radar-green transition-colors">${b.name}</div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wider">${b.category || 'BRAND'}</div>
+                                    </div>
+                                </div>
+                                <div class="text-gray-500 text-sm mb-3">
+                                    <i class="fas fa-satellite-dish mr-1"></i> NO ACTIVE INTEL — GO RECON
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[10px] text-gray-600 border border-gray-700 px-1.5 py-0.5">DARK</span>
+                                    <span class="text-radar-green text-xs group-hover:translate-x-1 transition-transform">EXPLORE <i class="fas fa-arrow-right ml-1"></i></span>
+                                </div>
+                            </a>
+                        `}).join('');
+                        return;
+                    }
+                }
+                
                 grid.innerHTML = `
                     <div class="col-span-2 text-center py-20 text-gray-600">
                         <i class="fas fa-radar text-4xl mb-4"></i>
