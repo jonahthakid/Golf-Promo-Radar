@@ -1,0 +1,40 @@
+[
+  {
+    "name": "Palisades GC T-Shirt",
+    "brand": "Dan on Golf",
+    "image_url": "https://shop.skratch.golf/cdn/shop/files/Skratch-DOG-Tee-4x5.jpg?v=1771013595&width=600",
+    "sale_price": 50,
+    "affiliate_url": "https://shop.skratch.golf/products/palisades-gc-t-shirt?variant=43038586306649",
+    "badge": "NEW",
+    "description": "Supports LA wildfire rebuilding via Steadfast LA"
+  },
+  {
+    "name": "8-Bit Tourasaurus Long Sleeve T-Shirt",
+    "brand": "Sugarloaf Social Club",
+    "image_url": "https://www.sugarloafsocialclub.com/cdn/shop/files/SSC-LS008-FLOBS_2-1x1copy.jpg?v=1765207915&width=600",
+    "sale_price": 44,
+    "affiliate_url": "https://www.sugarloafsocialclub.com/products/8-bit-tourasaurus-ls-t-shirt?variant=50991174910168",
+    "badge": "NEW",
+    "description": "Comfort Colors long sleeve"
+  },
+  {
+    "name": "Future Hybrid Vest",
+    "brand": "Zero Restriction",
+    "image_url": "https://zerorestriction.com/cdn/shop/files/FutureHybridVest_Astro_Front.jpg?v=1700000000&width=600",
+    "original_price": 335,
+    "sale_price": 248.50,
+    "affiliate_url": "https://zerorestriction.com/collections/mens-sale/products/future-hybrid-vest-1?variant=41828177543234",
+    "badge": "VALUE",
+    "description": "Down-filled, water-resistant, unrestricted movement"
+  },
+  {
+    "name": "G430 MAX 10K Driver",
+    "brand": "PING",
+    "image_url": "https://www.tgw.com/wcsstore/PingSE/Attachment/images/Products/ping-g430-max-10k/PING-G430-Max-10K-Driver_600.jpg",
+    "original_price": 599,
+    "sale_price": 449,
+    "affiliate_url": "https://www.tgw.com/p/ping-mens-g430-max-10k-driver",
+    "badge": "VALUE",
+    "description": "25% off — highest MOI driver ever made"
+  }
+]
