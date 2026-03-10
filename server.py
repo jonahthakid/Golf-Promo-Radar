@@ -3274,6 +3274,64 @@ def embed_demo():
 
 
 
+@app.route('/api/scan')
+def scan_url():
+    """On-demand scan of a user-provided URL"""
+    import time as _time
+    
+    url = request.args.get('url', '').strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    
+    # Add https if missing
+    if not url.startswith('http'):
+        url = 'https://' + url
+    
+    # Basic URL validation
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if not parsed.netloc or '.' not in parsed.netloc:
+            return jsonify({"error": "Invalid URL"}), 400
+        # Block internal/private IPs
+        hostname = parsed.netloc.split(':')[0]
+        if hostname in ['localhost', '127.0.0.1', '0.0.0.0'] or hostname.startswith('192.168.') or hostname.startswith('10.'):
+            return jsonify({"error": "Invalid URL"}), 400
+    except Exception:
+        return jsonify({"error": "Invalid URL"}), 400
+    
+    # Extract brand name from domain
+    domain = parsed.netloc.replace('www.', '')
+    brand_name = domain.split('.')[0].title()
+    
+    # Build a fake brand dict for scrape_brand
+    fake_brand = {
+        "name": brand_name,
+        "url": url,
+        "category": "unknown",
+        "tags": []
+    }
+    
+    start = _time.time()
+    try:
+        result = scrape_brand(fake_brand)
+        elapsed = round(_time.time() - start, 1)
+        
+        return jsonify({
+            "brand": brand_name,
+            "url": url,
+            "domain": domain,
+            "promo": result.get("promo"),
+            "code": result.get("code"),
+            "email_offer": result.get("email_offer"),
+            "sale_url": None,
+            "scan_time": elapsed,
+            "found": bool(result.get("promo") or result.get("code") or result.get("email_offer"))
+        })
+    except Exception as e:
+        return jsonify({"error": f"Scan failed: {str(e)}"}), 500
+
+
 @app.route('/api/brands')
 def get_brands():
     """Get list of all brands for SEO pages"""
