@@ -2896,6 +2896,14 @@ def index():
 
 
 
+@app.route('/favicon.png')
+def favicon():
+    return send_from_directory(BASE_DIR, 'favicon.png')
+
+@app.route('/radar_og.png')
+def og_image():
+    return send_from_directory(BASE_DIR, 'radar_og.png')
+
 @app.route('/radar_logo.svg')
 def logo():
     return send_from_directory(BASE_DIR, 'radar_logo.svg')
