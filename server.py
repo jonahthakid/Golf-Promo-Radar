@@ -161,7 +161,7 @@ except ImportError:
 # =============================================================================
 # CONFIG
 # =============================================================================
-REFRESH_INTERVAL_MINUTES = 10
+REFRESH_INTERVAL_MINUTES = 20
 DATA_FILE = "promo_data.json"
 DEAL_HISTORY_FILE = "deal_history.json"
 DROPS_HISTORY_FILE = "drops_history.json"
@@ -2349,7 +2349,7 @@ def run_scraper():
         error_count = 0
         
         # Concurrent brand scraping
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             future_to_brand = {executor.submit(scrape_brand, brand): brand for brand in BRANDS}
             for i, future in enumerate(as_completed(future_to_brand), 1):
                 brand = future_to_brand[future]
@@ -2399,9 +2399,9 @@ def run_scraper():
         # Scan for new drops / new arrivals
         # Brief delay to reduce 429s — main scraper just hit many of these same domains
         print(f"\n{'='*60}")
-        print(f"🆕 Scanning new arrivals pages (5s cooldown)...")
+        print(f"🆕 Scanning new arrivals pages (15s cooldown)...")
         print(f"{'='*60}")
-        time.sleep(5)
+        time.sleep(15)
         
         new_drops = []
         try:
@@ -2667,7 +2667,7 @@ def scan_sale_pages(brands):
                 return result
         return None
     
-    with ThreadPoolExecutor(max_workers=15) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_brand = {executor.submit(scan_brand_sales, brand): brand for brand in eligible_brands}
         for future in as_completed(future_to_brand):
             brand = future_to_brand[future]
@@ -2887,7 +2887,7 @@ def scrape_all_new_arrivals():
         brand_name, url = item
         return brand_name, scrape_new_arrivals_page(brand_name, url)
     
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(scrape_brand_arrivals, item): item for item in all_urls.items()}
         for future in as_completed(futures):
             try:
