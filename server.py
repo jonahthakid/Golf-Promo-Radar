@@ -878,22 +878,11 @@ NEW_ARRIVALS_PATHS = [
     '/collections/new-arrivals',
     '/collections/new',
     '/collections/new-releases',
-    '/collections/just-arrived',
-    '/collections/latest',
     '/collections/whats-new',
     '/collections/new-in',
-    '/collections/new-products',
-    '/collections/new-drops',
-    '/collections/newest',
     '/new-arrivals',
     '/new',
     '/whats-new',
-    '/shop/new-arrivals',
-    '/shop/new',
-    '/shop/new-in',
-    '/category/new-arrivals',
-    '/categories/new-arrivals',
-    '/pages/new-arrivals',
 ]
 
 
@@ -963,8 +952,8 @@ def discover_new_arrivals_url(brand):
 
 
 def build_new_arrivals_urls_smart():
-    """Build new arrivals URLs using manual overrides + smart discovery.
-    Runs discovery for brands without manual URLs."""
+    """Build new arrivals URLs using manual overrides + cached discovery.
+    Discovery only runs on first boot (when cache is empty)."""
     urls = dict(BRAND_NEW_ARRIVALS)  # Start with manual overrides
     
     # Load cache of previously discovered URLs
@@ -981,14 +970,17 @@ def build_new_arrivals_urls_smart():
             urls[name] = _discovered_drops_urls[name]["url"]
             continue
         
-        brands_to_discover.append(brand)
+        # Only discover if we've never checked this brand
+        if name not in _discovered_drops_urls:
+            brands_to_discover.append(brand)
     
-    # Discover URLs for remaining brands (concurrent, with limit)
+    # Only discover if cache was empty (first boot) — limit to 30 brands per run
     if brands_to_discover:
-        print(f"🔍 Discovering drops URLs for {len(brands_to_discover)} brands...")
+        batch = brands_to_discover[:30]
+        print(f"🔍 Discovering drops URLs for {len(batch)} of {len(brands_to_discover)} brands...")
         
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(discover_new_arrivals_url, b): b for b in brands_to_discover}
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(discover_new_arrivals_url, b): b for b in batch}
             for future in as_completed(futures):
                 brand = futures[future]
                 try:
@@ -998,7 +990,17 @@ def build_new_arrivals_urls_smart():
                 except Exception as e:
                     print(f"  ⚠️  {brand['name']}: Discovery failed: {e}")
     
-    print(f"🆕 Total drops URLs: {len(urls)} ({len(BRAND_NEW_ARRIVALS)} manual + {len(urls) - len(BRAND_NEW_ARRIVALS)} discovered)")
+    # For remaining brands without discovered URLs, fall back to /collections/new-arrivals
+    for brand in BRANDS:
+        name = brand["name"]
+        if name in urls or name in DROPS_SKIP_BRANDS:
+            continue
+        base_url = brand["url"].rstrip('/')
+        parsed = urlparse(base_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        urls[name] = f"{base}/collections/new-arrivals"
+    
+    print(f"🆕 Total drops URLs: {len(urls)} ({len(BRAND_NEW_ARRIVALS)} manual + {len(urls) - len(BRAND_NEW_ARRIVALS)} auto/discovered)")
     return urls
 
 
@@ -1574,7 +1576,7 @@ def score_promo_text(text):
     # Penalty for junk
     for phrase in JUNK_PHRASES:
         if phrase in text_lower:
-            score -= 15
+            score -= 5
     
     # Penalty for being too long (likely grabbed extra stuff)
     if len(text) > 150:
@@ -2293,7 +2295,7 @@ def scrape_brand(brand):
             best_text, best_score, source = candidates[0]
             
             # Only use if score is decent
-            if best_score > 10:
+            if best_score > 0:
                 result["promo"] = clean_text(best_text)
                 code = extract_code(best_text)
                 if code:
@@ -2322,6 +2324,10 @@ def scrape_brand(brand):
         result["error"] = str(e)[:50]
     except Exception as e:
         result["error"] = str(e)[:50]
+    
+    # Fallback: If no main promo found but we have an email offer, surface it
+    if not result.get("promo") and result.get("email_offer"):
+        result["promo"] = result["email_offer"]
     
     return result
 
