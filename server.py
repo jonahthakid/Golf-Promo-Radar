@@ -831,7 +831,7 @@ DROPS_SKIP_BRANDS = {
 
 def build_new_arrivals_urls():
     """Auto-generate new arrivals URLs for all brands not in manual overrides.
-    Tries /collections/new-arrivals for Shopify-style stores."""
+    Tries multiple common new arrivals paths and picks the first that works."""
     urls = dict(BRAND_NEW_ARRIVALS)  # Start with manual overrides
     
     for brand in BRANDS:
@@ -846,6 +846,159 @@ def build_new_arrivals_urls():
         # Try /collections/new-arrivals (works for most Shopify stores)
         urls[name] = f"{base}/collections/new-arrivals"
     
+    return urls
+
+
+# Cache for discovered new arrivals URLs
+_discovered_drops_urls = {}
+_drops_urls_cache_file = os.path.join(os.path.dirname(__file__), 'drops_url_cache.json')
+
+def load_drops_url_cache():
+    """Load previously discovered drops URLs"""
+    global _discovered_drops_urls
+    try:
+        if os.path.exists(_drops_urls_cache_file):
+            with open(_drops_urls_cache_file) as f:
+                _discovered_drops_urls = json.load(f)
+                print(f"📂 Loaded {len(_discovered_drops_urls)} cached drops URLs")
+    except Exception:
+        _discovered_drops_urls = {}
+
+def save_drops_url_cache():
+    """Save discovered drops URLs for next scan"""
+    try:
+        with open(_drops_urls_cache_file, 'w') as f:
+            json.dump(_discovered_drops_urls, f, indent=2)
+    except Exception as e:
+        print(f"⚠️  Failed to save drops URL cache: {e}")
+
+
+# Common new arrivals paths across e-commerce platforms
+NEW_ARRIVALS_PATHS = [
+    '/collections/new-arrivals',
+    '/collections/new',
+    '/collections/new-releases',
+    '/collections/just-arrived',
+    '/collections/latest',
+    '/collections/whats-new',
+    '/collections/new-in',
+    '/collections/new-products',
+    '/collections/new-drops',
+    '/collections/newest',
+    '/new-arrivals',
+    '/new',
+    '/whats-new',
+    '/shop/new-arrivals',
+    '/shop/new',
+    '/shop/new-in',
+    '/category/new-arrivals',
+    '/categories/new-arrivals',
+    '/pages/new-arrivals',
+]
+
+
+def discover_new_arrivals_url(brand):
+    """Try multiple common paths to find a brand's new arrivals page.
+    Returns the first URL that returns 200 with product content, or None."""
+    global _discovered_drops_urls
+    
+    name = brand["name"]
+    
+    # Check cache first
+    if name in _discovered_drops_urls:
+        cached = _discovered_drops_urls[name]
+        if cached.get("url"):
+            return cached["url"]
+        # If we cached None (no URL found), skip re-discovery for 24h
+        if cached.get("checked_at"):
+            try:
+                checked = datetime.fromisoformat(cached["checked_at"])
+                if (datetime.now() - checked).total_seconds() < 86400:
+                    return None
+            except Exception:
+                pass
+    
+    base_url = brand["url"].rstrip('/')
+    parsed = urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    
+    for path in NEW_ARRIVALS_PATHS:
+        try:
+            test_url = base + path
+            resp = requests.get(test_url, headers=get_headers(), timeout=5, allow_redirects=True)
+            
+            if resp.status_code != 200:
+                continue
+            
+            # Check if page has actual product content (not a redirect to homepage or 404 soft page)
+            text = resp.text.lower()
+            has_products = any(marker in text for marker in [
+                'product-card', 'product-item', 'productcard', 'product-tile',
+                'plp-card', 'collection-product', 'product-listing',
+                '"@type":"product"', '"@type":"itemlist"',
+                'data-product', 'class="product"',
+                '/products/', 'add-to-cart', 'add_to_cart',
+            ])
+            
+            if has_products:
+                print(f"  🔍 {name}: Found drops at {path}")
+                _discovered_drops_urls[name] = {
+                    "url": test_url,
+                    "path": path,
+                    "checked_at": datetime.now().isoformat()
+                }
+                save_drops_url_cache()
+                return test_url
+                
+        except Exception:
+            continue
+    
+    # Cache the miss so we don't retry for 24h
+    _discovered_drops_urls[name] = {
+        "url": None,
+        "checked_at": datetime.now().isoformat()
+    }
+    save_drops_url_cache()
+    return None
+
+
+def build_new_arrivals_urls_smart():
+    """Build new arrivals URLs using manual overrides + smart discovery.
+    Runs discovery for brands without manual URLs."""
+    urls = dict(BRAND_NEW_ARRIVALS)  # Start with manual overrides
+    
+    # Load cache of previously discovered URLs
+    load_drops_url_cache()
+    
+    brands_to_discover = []
+    for brand in BRANDS:
+        name = brand["name"]
+        if name in urls or name in DROPS_SKIP_BRANDS:
+            continue
+        
+        # Check cache first
+        if name in _discovered_drops_urls and _discovered_drops_urls[name].get("url"):
+            urls[name] = _discovered_drops_urls[name]["url"]
+            continue
+        
+        brands_to_discover.append(brand)
+    
+    # Discover URLs for remaining brands (concurrent, with limit)
+    if brands_to_discover:
+        print(f"🔍 Discovering drops URLs for {len(brands_to_discover)} brands...")
+        
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(discover_new_arrivals_url, b): b for b in brands_to_discover}
+            for future in as_completed(futures):
+                brand = futures[future]
+                try:
+                    url = future.result()
+                    if url:
+                        urls[brand["name"]] = url
+                except Exception as e:
+                    print(f"  ⚠️  {brand['name']}: Discovery failed: {e}")
+    
+    print(f"🆕 Total drops URLs: {len(urls)} ({len(BRAND_NEW_ARRIVALS)} manual + {len(urls) - len(BRAND_NEW_ARRIVALS)} discovered)")
     return urls
 
 
@@ -1294,23 +1447,22 @@ HEADERS = {
 # Junk phrases to filter out (navigation, generic text, etc.)
 JUNK_PHRASES = [
     'shop now', 'shop all', 'view all', 'see all', 'learn more', 'read more',
-    'sign in', 'log in', 'my account', 'cart', 'checkout', 'search',
+    'sign in', 'log in', 'my account', 'my cart', 'checkout',
     'menu', 'close', 'open', 'skip to', 'accessibility',
-    'men', 'women', 'new arrivals', 'best sellers', 'collections',
-    'contact us', 'customer service', 'help', 'faq',
-    'privacy policy', 'terms', 'cookie', 'accept',
+    'contact us', 'customer service', 'help center', 'faq',
+    'privacy policy', 'terms of service', 'cookie policy', 'accept cookies',
     'instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'pinterest',
-    'download', 'app store', 'google play',
+    'download our app', 'app store', 'google play',
     'united states', 'select country', 'change location',
     'loading', 'please wait',
     # Browser/site warnings
     'limited support for your browser', 'we recommend switching', 'recommend switching to',
-    'chrome, safari', 'edge, chrome', 'firefox',
+    'chrome, safari', 'edge, chrome',
     # Cart/order messages (not promos)
     'congratulations! your order', 'your order qualifies', 'order qualifies for',
     'your cart is empty', 'no items in', 'items in your cart',
     # Currency selectors
-    'currency', 'usd $', 'eur €', 'gbp £',
+    'currency selector', 'usd $', 'eur €', 'gbp £',
     # Product listing UI
     'quick add', 'add to cart', 'add to bag', 'select size', 'choose size',
     'pant waist', 'waist size', 'chest size', 'inseam',
@@ -2720,7 +2872,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 
 def scrape_all_new_arrivals():
     """Scrape new arrivals from all brands (concurrent)"""
-    all_urls = build_new_arrivals_urls()
+    all_urls = build_new_arrivals_urls_smart()
     print(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
     
     all_new_drops = []
