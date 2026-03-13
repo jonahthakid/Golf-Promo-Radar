@@ -287,6 +287,16 @@
         </div>
     </header>
 
+    <!-- Main Search Bar -->
+    <div class="container mx-auto px-4 pt-6 pb-2 relative z-10">
+        <div class="relative max-w-2xl mx-auto">
+            <input type="text" id="hero-search-input" placeholder="SEARCH 170+ GOLF BRANDS..." 
+                class="w-full bg-radar-dark border-2 border-radar-grid px-6 py-4 text-white text-lg placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors font-tech tracking-wider"
+                oninput="handleSearch(this.value); document.getElementById('search-input').value = this.value;">
+            <i class="fas fa-search absolute right-6 top-1/2 -translate-y-1/2 text-gray-600 text-lg"></i>
+        </div>
+    </div>
+
     <!-- Main Content -->
     <main class="flex-grow container mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
         
@@ -949,7 +959,7 @@
                         </div>
                         <div id="scan-results" class="mt-4"></div>
                         <div class="mt-4">
-                            <a href="mailto:radar@proshop.inc?subject=Brand%20Request:%20${encodeURIComponent(searchQuery)}&body=I'd%20like%20to%20see%20${encodeURIComponent(searchQuery)}%20added%20to%20RADAR." 
+                            <a href="mailto:support@radar.golf?subject=Brand%20Request:%20${encodeURIComponent(searchQuery)}&body=I'd%20like%20to%20see%20${encodeURIComponent(searchQuery)}%20added%20to%20RADAR." 
                                 class="text-xs text-gray-600 hover:text-radar-green transition-colors">
                                 <i class="fas fa-plus mr-1"></i> Request this brand be added to RADAR
                             </a>
@@ -1618,6 +1628,11 @@
 
         function handleSearch(value) {
             searchQuery = value;
+            // Sync both search inputs
+            const heroInput = document.getElementById('hero-search-input');
+            const sideInput = document.getElementById('search-input');
+            if (heroInput && heroInput.value !== value) heroInput.value = value;
+            if (sideInput && sideInput.value !== value) sideInput.value = value;
             updateUI();
         }
 
