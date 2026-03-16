@@ -864,7 +864,7 @@
                     
                     const rawUrl = top.affiliate_url || top.url;
                     const linkUrl = trackUrl(rawUrl, top.brand, 'critical-hit');
-                    const hasLogo = top.image && !top.image.includes('data:');
+                    const topInitials = top.brand.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                     featured.className = 'bg-radar-dark border border-radar-red p-0 relative overflow-hidden group hover:shadow-[0_0_15px_rgba(255,51,51,0.2)] transition-all duration-300';
                     featured.innerHTML = `
                         <div class="target-corner tl border-radar-red"></div>
@@ -874,10 +874,7 @@
                         <div class="absolute top-0 right-0 bg-radar-red text-black font-loud px-3 py-1 text-lg z-20">🔥 CRITICAL HIT</div>
                         <div class="p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
                             <div class="w-16 h-16 bg-white rounded flex items-center justify-center shrink-0 overflow-hidden">
-                                ${hasLogo 
-                                    ? `<img src="${top.image}" alt="${top.brand}" class="w-full h-full object-contain p-2" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-fire text-3xl text-radar-red\\'></i>'">`
-                                    : `<i class="fas fa-fire text-3xl text-radar-red"></i>`
-                                }
+                                <span class="font-loud text-2xl text-black">${topInitials}</span>
                             </div>
                             <div class="flex-grow">
                                 <h3 class="font-loud text-3xl text-white group-hover:text-radar-red transition-colors">${top.brand}</h3>
@@ -977,7 +974,7 @@
                 const icon = getCategoryIcon(p.category);
                 const rawUrl = p.affiliate_url || p.url;
                 const linkUrl = trackUrl(rawUrl, p.brand, 'promos');
-                const hasLogo = p.image && !p.image.includes('data:');
+                const initials = p.brand.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                 
                 // Badge logic: NEW > HOT > ALWAYS ON
                 let badge = '';
@@ -1016,10 +1013,7 @@
                             <div class="flex justify-between items-start mb-4 relative z-10">
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 bg-white rounded-sm flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                        ${hasLogo 
-                                            ? `<img src="${p.image}" alt="${p.brand}" class="w-full h-full object-contain p-1" onerror="this.parentElement.innerHTML='<i class=\\'fas ${icon} text-black\\'></i>'">`
-                                            : `<i class="fas ${icon} text-black"></i>`
-                                        }
+                                        <span class="font-loud text-sm text-black">${initials}</span>
                                     </div>
                                     <div>
                                         <h4 class="font-loud text-2xl text-white leading-none">${p.brand}</h4>
