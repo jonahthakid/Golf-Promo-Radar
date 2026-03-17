@@ -836,8 +836,18 @@
                 );
             }
 
-            // Sort: NEW first, then by discount percentage
+            // Sort: NEW first, then by discount percentage, free-shipping-only last
+            const isFreeShipOnly = (p) => {
+                const text = (p.promo || '').toLowerCase();
+                return text.includes('free shipping') && !p.promo?.match(/\d+%/) && !p.promo?.match(/\$\d/);
+            };
             promos.sort((a, b) => {
+                // Free-shipping-only to the bottom
+                const aShipOnly = isFreeShipOnly(a);
+                const bShipOnly = isFreeShipOnly(b);
+                if (aShipOnly && !bShipOnly) return 1;
+                if (!aShipOnly && bShipOnly) return -1;
+                
                 // New deals first
                 if (a.is_new && !b.is_new) return -1;
                 if (!a.is_new && b.is_new) return 1;
