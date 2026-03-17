@@ -141,6 +141,246 @@ def fetch_reddit_intel(limit=15):
 
 
 # =============================================================================
+# DEAL AGGREGATOR INTEL (Slickdeals, DealNews, etc.)
+# =============================================================================
+DEAL_AGGREGATOR_SOURCES = [
+    {
+        "name": "Slickdeals",
+        "url": "https://slickdeals.net/newsearch.php?q=golf&searcharea=deals&searchin=first&rss=1",
+        "type": "rss",
+        "icon": "SD"
+    },
+    {
+        "name": "Slickdeals FP",
+        "url": "https://feeds.slickdeals.net/rss/deals?search=golf",
+        "type": "rss",
+        "icon": "SD"
+    },
+    {
+        "name": "HotDeals",
+        "url": "https://www.hotdeals.com/golf/?rss=1",
+        "type": "rss",
+        "icon": "HD"
+    },
+    {
+        "name": "DealNews",
+        "url": "https://www.dealnews.com/c186/Sports-Fitness/Golf/?rss=1",
+        "type": "rss",
+        "icon": "DN"
+    },
+]
+
+def fetch_deal_aggregator_intel(limit=15):
+    """
+    Scrape deal aggregator sites (Slickdeals, HotDeals, DealNews) for golf deals.
+    Uses RSS/XML feeds where available, falls back to HTML scraping.
+    """
+    intel_deals = []
+    seen_urls = set()
+    
+    golf_keywords = [
+        'golf', 'driver', 'putter', 'iron', 'wedge', 'fairway', 'hybrid',
+        'titleist', 'callaway', 'taylormade', 'ping', 'cobra', 'mizuno',
+        'footjoy', 'puma golf', 'adidas golf', 'nike golf', 'under armour golf',
+        'scotty cameron', 'vokey', 'pro v1', 'kirkland', 'vice golf',
+        'rangefinder', 'bushnell', 'garmin golf', 'golf ball', 'golf shoe',
+        'golf bag', 'push cart', 'golf glove', 'golf shirt', 'golf polo',
+    ]
+    
+    # --- RSS Feeds ---
+    for source in DEAL_AGGREGATOR_SOURCES:
+        try:
+            headers = {
+                'User-Agent': 'GolfRadar/1.0 (golf deal aggregator)',
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+            }
+            resp = requests.get(source["url"], headers=headers, timeout=10)
+            
+            if resp.status_code != 200:
+                print(f"  ⚠️  {source['name']}: HTTP {resp.status_code}")
+                continue
+            
+            # Parse RSS/XML
+            soup = BeautifulSoup(resp.text, 'xml')
+            items = soup.find_all('item')
+            
+            if not items:
+                # Try HTML fallback — some feeds return HTML
+                soup = BeautifulSoup(resp.text, 'lxml')
+                items = soup.find_all('item')
+            
+            for item in items[:20]:
+                try:
+                    title = item.find('title')
+                    title = title.get_text(strip=True) if title else ''
+                    
+                    link = item.find('link')
+                    deal_url = link.get_text(strip=True) if link else ''
+                    if not deal_url and link:
+                        deal_url = link.get('href', '')
+                    
+                    description = item.find('description')
+                    desc_text = description.get_text(strip=True) if description else ''
+                    
+                    if not title or not deal_url:
+                        continue
+                    
+                    # Filter for golf-related content
+                    combined = (title + ' ' + desc_text).lower()
+                    if not any(kw in combined for kw in golf_keywords):
+                        continue
+                    
+                    # Skip duplicates
+                    if deal_url in seen_urls:
+                        continue
+                    seen_urls.add(deal_url)
+                    
+                    # Try to match to known brand
+                    brand = "Community Find"
+                    for b in BRANDS:
+                        brand_name = b['name'].lower()
+                        if brand_name in combined:
+                            brand = b['name']
+                            break
+                    
+                    # Extract discount
+                    discount_match = re.search(r'(\d+)\s*%', title)
+                    discount = int(discount_match.group(1)) if discount_match else None
+                    
+                    # Extract code
+                    code_match = re.search(r'(?:code|coupon)[:\s]+([A-Z0-9]{4,20})', title, re.IGNORECASE)
+                    code = code_match.group(1).upper() if code_match else None
+                    
+                    intel_deals.append({
+                        "brand": brand,
+                        "promo": title[:150],
+                        "url": deal_url,
+                        "source": source["name"],
+                        "source_icon": source["icon"],
+                        "score": discount or 0,
+                        "code": code,
+                        "discount": discount,
+                        "is_new": True,
+                        "type": "community_intel"
+                    })
+                    
+                except Exception:
+                    continue
+            
+            found = sum(1 for d in intel_deals if d.get("source") == source["name"])
+            if found:
+                print(f"  🔍 {source['name']}: {found} golf deals found")
+                    
+        except Exception as e:
+            print(f"  ⚠️  {source['name']} scrape failed: {e}")
+            continue
+    
+    # --- Slickdeals HTML fallback (if RSS returned nothing) ---
+    sd_count = sum(1 for d in intel_deals if 'Slickdeals' in d.get('source', ''))
+    if sd_count == 0:
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+            resp = requests.get('https://slickdeals.net/newsearch.php?q=golf&searcharea=deals&searchin=first', 
+                              headers=headers, timeout=10)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, 'lxml')
+                # Slickdeals search results
+                results = soup.select('[class*="resultRow"], [class*="dealCard"], [class*="searchResult"], li[class*="deal"]')[:15]
+                
+                for result in results:
+                    try:
+                        link = result.select_one('a[href*="/f/"], a[href*="/e/"], a[class*="dealTitle"]')
+                        if not link:
+                            link = result.select_one('a')
+                        if not link:
+                            continue
+                        
+                        title = link.get_text(strip=True)
+                        href = link.get('href', '')
+                        if href and not href.startswith('http'):
+                            href = 'https://slickdeals.net' + href
+                        
+                        if not title or not href or href in seen_urls:
+                            continue
+                        
+                        combined = title.lower()
+                        if not any(kw in combined for kw in golf_keywords):
+                            continue
+                        
+                        seen_urls.add(href)
+                        
+                        brand = "Community Find"
+                        for b in BRANDS:
+                            if b['name'].lower() in combined:
+                                brand = b['name']
+                                break
+                        
+                        discount_match = re.search(r'(\d+)\s*%', title)
+                        discount = int(discount_match.group(1)) if discount_match else None
+                        
+                        intel_deals.append({
+                            "brand": brand,
+                            "promo": title[:150],
+                            "url": href,
+                            "source": "Slickdeals",
+                            "source_icon": "SD",
+                            "score": discount or 0,
+                            "code": None,
+                            "discount": discount,
+                            "is_new": True,
+                            "type": "community_intel"
+                        })
+                    except Exception:
+                        continue
+                
+                sd_html = sum(1 for d in intel_deals if d.get('source') == 'Slickdeals')
+                if sd_html:
+                    print(f"  🔍 Slickdeals (HTML): {sd_html} golf deals found")
+        except Exception as e:
+            print(f"  ⚠️  Slickdeals HTML fallback failed: {e}")
+    
+    # Sort by discount (highest first)
+    intel_deals.sort(key=lambda x: x.get('discount') or 0, reverse=True)
+    return intel_deals[:limit]
+
+
+def fetch_all_community_intel(limit=25):
+    """Fetch deals from all community sources: Reddit + deal aggregators"""
+    all_deals = []
+    
+    # Reddit
+    try:
+        reddit = fetch_reddit_intel(limit=15)
+        if reddit:
+            all_deals.extend(reddit)
+            print(f"🔴 Reddit: {len(reddit)} deals")
+    except Exception as e:
+        print(f"⚠️  Reddit fetch failed: {e}")
+    
+    # Deal aggregators (Slickdeals, HotDeals, DealNews)
+    try:
+        aggregator = fetch_deal_aggregator_intel(limit=15)
+        if aggregator:
+            all_deals.extend(aggregator)
+            print(f"🔍 Aggregators: {len(aggregator)} deals")
+    except Exception as e:
+        print(f"⚠️  Aggregator fetch failed: {e}")
+    
+    # Dedupe by URL
+    seen = set()
+    deduped = []
+    for deal in all_deals:
+        url = deal.get("url", "")
+        if url not in seen:
+            seen.add(url)
+            deduped.append(deal)
+    
+    # Sort: highest discount first, then by score
+    deduped.sort(key=lambda x: (x.get('discount') or 0, x.get('score') or 0), reverse=True)
+    return deduped[:limit]
+
+
+# =============================================================================
 # IMPACT RADIUS CONFIG
 # =============================================================================
 IMPACT_ENABLED = os.environ.get("IMPACT_ENABLED", "true").lower() == "true"
@@ -1658,7 +1898,8 @@ def extract_code(text):
     
     # Minimal blacklist - only things that are definitely not codes
     blacklist = ['DEFAULT', 'TRUE', 'FALSE', 'NULL', 'UNDEFINED', 'FUNCTION', 
-                 'RETURN', 'CONST', 'VAR', 'HTTP', 'HTTPS', 'HTML', 'CSS']
+                 'RETURN', 'CONST', 'VAR', 'HTTP', 'HTTPS', 'HTML', 'CSS',
+                 'TRANSFORMATIONSV2', 'TRANSFORMATIONS']
     
     for pattern in patterns:
         matches = re.findall(pattern, text_upper, re.IGNORECASE)
@@ -2994,14 +3235,14 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     except Exception as e:
         print(f"⚠️  Priority Intel config load failed: {e}")
     
-    # Fetch Reddit community intel
+    # Fetch community intel (Reddit + Slickdeals + HotDeals + DealNews)
     try:
-        reddit_intel = fetch_reddit_intel(limit=15)
-        if reddit_intel:
-            data["communityIntel"] = reddit_intel
-            print(f"🔴 Reddit Intel: {len(reddit_intel)} community deals found")
+        community_intel = fetch_all_community_intel(limit=25)
+        if community_intel:
+            data["communityIntel"] = community_intel
+            print(f"🔍 Community Intel: {len(community_intel)} total deals from all sources")
     except Exception as e:
-        print(f"⚠️  Reddit fetch failed: {e}")
+        print(f"⚠️  Community intel fetch failed: {e}")
     
     atomic_write_json(DATA_FILE, data)
     
