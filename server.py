@@ -1834,7 +1834,7 @@ def score_promo_text(text):
 
 
 def clean_promo_text(text):
-    """Clean up promo text, removing junk"""
+    """Clean up promo text, removing junk and marketing claims (legal requirement)"""
     # Normalize whitespace
     text = ' '.join(text.split())
     
@@ -1850,6 +1850,17 @@ def clean_promo_text(text):
         r'^\s*\d+\s+(items?|products?)\s*',
     ]
     for pattern in remove_patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    # Strip marketing claims that could imply endorsement (legal requirement)
+    # Remove these phrases but keep the rest of the promo intact
+    marketing_claims = [
+        r'\b(?:best|lowest|biggest|most amazing|incredible|unbeatable)\s+(?:prices?|deals?|savings?|discounts?|offers?)\s*(?:online|ever|anywhere|guaranteed)?\.?\s*',
+        r'\bguaranteed\.?\s*',
+        r'\b(?:hurry|act now|don\'t miss|last chance|won\'t last|selling fast|almost gone)[.!]?\s*',
+        r'\b(?:our|the)\s+(?:biggest|best|greatest|most)\s+(?:sale|event|offer)\s*(?:of the (?:year|season))?[.!]?\s*',
+    ]
+    for pattern in marketing_claims:
         text = re.sub(pattern, '', text, flags=re.IGNORECASE)
     
     # Clean up punctuation
