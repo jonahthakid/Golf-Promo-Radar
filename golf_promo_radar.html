@@ -287,13 +287,10 @@
         </div>
     </header>
 
-    <!-- Main Search Bar -->
-    <div class="container mx-auto px-4 pt-6 pb-2 relative z-10">
-        <div class="relative max-w-2xl mx-auto">
-            <input type="text" id="hero-search-input" placeholder="SEARCH 170+ GOLF BRANDS..." 
-                class="w-full bg-radar-dark border-2 border-radar-grid px-6 py-4 text-white text-lg placeholder-gray-600 focus:border-radar-green focus:outline-none transition-colors font-tech tracking-wider"
-                oninput="handleSearch(this.value); document.getElementById('search-input').value = this.value;">
-            <i class="fas fa-search absolute right-6 top-1/2 -translate-y-1/2 text-gray-600 text-lg"></i>
+    <!-- Affiliate Disclosure (above the fold) -->
+    <div class="bg-radar-dark/80 border-b border-radar-grid">
+        <div class="container mx-auto px-4 py-2 text-center text-[11px] text-gray-500">
+            <i class="fas fa-info-circle mr-1"></i> RADAR contains affiliate links. We may earn a commission on purchases at no cost to you. <a href="/privacy" class="text-gray-400 hover:text-radar-green underline">Learn more</a>
         </div>
     </div>
 
@@ -1632,11 +1629,6 @@
 
         function handleSearch(value) {
             searchQuery = value;
-            // Sync both search inputs
-            const heroInput = document.getElementById('hero-search-input');
-            const sideInput = document.getElementById('search-input');
-            if (heroInput && heroInput.value !== value) heroInput.value = value;
-            if (sideInput && sideInput.value !== value) sideInput.value = value;
             updateUI();
         }
 
