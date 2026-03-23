@@ -1006,52 +1006,100 @@ NEW_ARRIVALS_PATTERNS = [
 
 # Brands with known new arrivals pages (brand_name -> url)
 BRAND_NEW_ARRIVALS = {
-    # Manual overrides for brands with non-standard new arrivals URLs
-    "Malbon Golf": "https://www.malbongolf.com/collections/new-arrivals",
-    "Eastside Golf": "https://www.eastsidegolf.com/collections/new-arrivals",
-    "Sunday Red": "https://www.sundayred.com/collections/new-arrivals",
-    "Bogey Boys": "https://bogeyboys.com/collections/new-arrivals",
-    "Metalwood Studio": "https://metalwoodstudio.com/collections/new-arrivals",
-    "Students Golf": "https://studentsgolf.com/collections/new",
-    "Random Golf Club": "https://randomgolfclub.com/collections/new-arrivals",
-    "Quiet Golf": "https://quietgolf.com/collections/new-arrivals",
-    "Whim Golf": "https://whimgolf.com/collections/all",
-    "Manors": "https://manorsgolf.com/collections/new-in",
-    "Good Good Golf": "https://goodgood.com/collections/new-arrivals",
-    "G/FORE": "https://www.gfore.com/collections/new-arrivals",
-    "Greyson Clothiers": "https://www.greysonclothiers.com/collections/new-arrivals",
-    "Peter Millar": "https://www.petermillar.com/new-arrivals/",
-    "TravisMathew": "https://www.travismathew.com/collections/new-arrivals",
-    "J.Lindeberg": "https://www.jlindeberg.com/us/new-arrivals",
-    "Holderness & Bourne": "https://www.holderness-bourne.com/collections/new-arrivals",
-    "Rhoback": "https://rhoback.com/collections/new-arrivals",
-    "Swannies": "https://swannies.co/collections/new-arrivals",
-    "Bad Birdie": "https://badbirdie.com/collections/new-arrivals",
-    "Linksoul": "https://linksoul.com/collections/new-arrivals",
-    "FootJoy": "https://www.footjoy.com/new-arrivals/",
-    "TRUE Linkswear": "https://truelinkswear.com/collections/new-arrivals",
-    "Cuater": "https://cuater.com/collections/new-arrivals",
-    "Duca del Cosma": "https://ducadelcosma.us/collections/new-arrivals",
-    "Titleist": "https://www.titleist.com/new",
-    "TaylorMade": "https://www.taylormadegolf.com/new/",
-    "Callaway": "https://www.callawaygolf.com/new/",
-    "Cobra Golf": "https://www.cobragolf.com/collections/new",
-    "PING": "https://ping.com/en-us/shop/new",
-    "Cleveland Golf": "https://www.clevelandgolf.com/new/",
-    "Mizuno Golf": "https://mizunogolf.com/us/new-arrivals/",
-    "Srixon/Cleveland": "https://www.srixon.com/us/new-arrivals/",
-    "Foray Golf": "https://foraygolf.com/collections/new-arrivals",
-    "KINONA": "https://kinonasport.com/collections/new-arrivals",
-    "Daily Sports": "https://us.dailysports.com/collections/new-arrivals",
-    "Arccos Golf": "https://www.arccosgolf.com/collections/new",
-    "Sugarloaf Social Club": "https://sugarloafsocialclub.com/collections/new-arrivals",
-    # Non-standard platforms with known URLs
-    "Nike Golf": "https://www.nike.com/w/new-golf-23q9wz3n82y",
+    "ANEW Golf": "https://anewgolf.com/product/list.html?cate_no=192",
+    "Ace of Clubs Golf": "https://www.aceofclubsgolfco.com/collections/new-arrivals",
     "Adidas Golf": "https://www.adidas.com/us/new_arrivals-golf",
+    "Arccos Golf": "https://www.arccosgolf.com/collections/new",
+    "B. Draddy": "https://bdraddy.com/collections/mens-new-arrivals",
+    "Bad Birdie": "https://badbirdiegolf.com/collections/mens-new-arrivals",
+    "Barstool Fore Play": "https://store.barstoolsports.com/collections/new-arrivals",
+    "Belyn Key": "https://belynkey.com/collections/new-arrivals",
+    "Blackballed Golf": "https://blackballedgolf.com/collections/new-arrivals",
+    "Bogner": "https://www.bogner.com/en-us/c/men/new-arrivals/453655/",
+    "Bonobos Golf": "https://bonobos.com/shop/new-arrivals",
+    "Boston Scally": "https://www.bostonscally.com/collections/new-arrivals",
+    "Brady Brand": "https://bradybrand.com/collections/new-arrivals",
+    "Branded Bills": "https://www.brandedbills.com/collections/new-arrivals",
+    "Callaway": "https://www.callawaygolf.com/new/",
+    "Callaway Apparel": "https://www.callawayapparel.com/collections/new-arrivals",
+    "Callaway Golf": "https://www.callawaygolf.com/quantum-family",
+    "Cayce Golf": "https://www.caycegolf.com/collections/new-releases",
+    "Cuater": "https://cuater.com/collections/new-arrivals",
+    "Devereux Golf": "https://devereuxgolf.com/collections/new-arrivals",
+    "Dunning Golf": "https://www.dunninggolf.com/golf/new-arrivals/",
+    "EP Pro / EPNY": "https://epnygolf.com/collections/new-arrivals",
+    "Eastside Golf": "https://www.eastsidegolf.com/collections/new-arrivals",
+    "Ecco Golf": "https://us.ecco.com/golf/new-arrivals/",
+    "Fairmonde": "https://www.fairmonde.com/collections/latest-collection",
+    "Fairway Golf": "https://fairwaygolfusa.com/plugin/view/_action/productlisting/_f/script/?search=newarrivals",
+    "Famara Golf": "https://famaragolf.com/en-us/collections/new-golfwear",
+    "FootJoy": "https://www.footjoy.com/new-arrivals/",
+    "Foray Golf": "https://foraygolf.com/collections/current-wave",
+    "Fore All": "https://www.foreall.com/collections/new-arrivals",
+    "G/FORE": "https://www.gfore.com/c/new/new-arrivals",
+    "Greyson Clothiers": "https://www.greysonclothiers.com/collections/shop-all-new-arrivals",
+    "J.Lindeberg": "https://www.jlindeberg.com/collections/mens-golf-new-in",
+    "Jayebird": "https://jayebirdgolf.com/collections/new-arrivals",
+    "Jofit": "https://www.jofit.com/collections/new-arrivals",
+    "Jones Golf Bags": "https://www.jonessportsco.com/collections/new-arrivals",
+    "KINONA": "https://kinonasport.com/catalog/category/new/summer/",
+    "Kjus": "https://www.kjus.com/us/en/new-arrivals-1/",
+    "LIJA": "https://lijastyle.com/collections/new-in",
+    "Linksoul": "https://linksoul.com/collections/new-arrivals",
+    "Maelreg": "https://www.maelreg.com/collections/new-arrivals",
+    "Malbon Golf": "https://malbongolf.com/collections/new",
+    "Melin": "https://melin.com/collections/new-arrivals",
+    "Miura Golf": "https://miuragolf.com/collections/new-arrivals",
+    "Mizuno Golf": "https://usa.mizuno.com/golf/featured/new-arrivals/",
+    "Mizzen+Main": "https://www.mizzenandmain.com/collections/new-arrivals",
+    "Nike Golf": "https://www.nike.com/w/new-golf-23q9wz3n82y",
+    "No Laying Up": "https://store.nolayingup.com/collections/new-arrivals",
+    "OGIO Golf": "https://www.ogio.com/new-arrivals",
+    "Odyssey Golf": "https://www.odysseygolf.com/new/",
+    "Original Penguin Golf": "https://www.originalpenguin.com/collections/new-arrivals",
+    "PING": "https://ping.com/en-us/shop/new",
+    "PRG Golf": "https://prg-golf.com/collections/2025-prg-originals",
     "PUMA Golf": "https://us.puma.com/us/en/golf/new-arrivals",
-    "Under Armour Golf": "https://www.underarmour.com/en-us/c/mens/golf/?newArrival=true",
-    "Oakley Golf": "https://www.oakley.com/en-us/category/golf/new-arrivals",
     "PXG": "https://www.pxg.com/en-us/new",
+    "Peter Millar": "https://www.petermillar.com/c/new/new-arrivals/new-for-golf",
+    "Pins & Aces": "https://pinsandaces.com/collections/just-in",
+    "Pukka Golf": "https://pukkainc.com/markets/new-releases-golf",
+    "Ralph Lauren RLX": "https://www.ralphlauren.com/men-clothing-shop-new-arrivals-cg/r/rlx",
+    "Random Golf Club": "https://randomgolfclub.com/collections/new-arrivals-1",
+    "Rhoback": "https://rhoback.com/collections/new-arrivals",
+    "Rhone": "https://www.rhone.com/collections/new-arrivals",
+    "Rose & Fire": "https://www.roseandfire.com/collections/new-drops",
+    "Scotty Cameron": "https://www.scottycameron.com/store/",
+    "Seamus Golf": "https://seamusgolf.com/collections/new-arrivals",
+    "Snell Golf": "https://www.snellgolf.com/collections/new",
+    "Sounder Golf": "https://www.soundergolf.com/collections/new-arrivals",
+    "Southern Tide": "https://www.southerntide.com/collections/new-arrivals",
+    "Sqairz Golf": "https://sqairz.com/collections/new-models",
+    "Srixon/Cleveland": "https://www.srixon.com/us/new-arrivals/",
+    "Stewart Golf": "https://shop.stewartgolfusa.com/collections/golf-carts/new-carts",
+    "Stitch Golf": "https://stitchgolf.com/collections/new-arrivals",
+    "Straight Down": "https://straightdown.com/collections/new-arrivals",
+    "Students Golf": "https://studentsgolf.com/collections/new-arrivals",
+    "Sun Mountain": "https://www.sunmountain.com/new-products",
+    "Sunday Golf": "https://sundaygolf.com/collections/new-arrivals",
+    "Sunday Red": "https://www.sundayred.com/featured/spotlights/new-arrivals/?lang=en_US",
+    "SuperStroke": "https://superstrokeusa.com/new-arrivals/",
+    "Swannies": "https://swannies.co/collections/newarrivals",
+    "Swing Juice": "https://swingjuice.com/collections/justdropped",
+    "TRUE Linkswear": "https://truelinkswear.com/collections/new-arrivals",
+    "TaylorMade": "https://www.taylormadegolf.com/new-releases/?lang=en_US",
+    "Titleist": "https://www.titleist.com/golf-gear/new/",
+    "Tory Sport": "https://www.toryburch.com/en-us/sport/clothing/new-arrivals/",
+    "TravisMathew": "https://travismathew.com/collections/mens-new-arrivals",
+    "True Linkswear": "https://truelinkswear.com/collections/whats-new",
+    "Under Armour Golf": "https://www.underarmour.com/en-us/c/new-arrivals/golf/",
+    "Uniqlo": "https://www.uniqlo.com/us/en/feature/new/men",
+    "Vessel Golf": "https://vesselgolf.com/collections/new-arrivals",
+    "Volvik": "https://volvik.com/collections/new-products",
+    "Vuori": "https://vuoriclothing.com/collections/new",
+    "Wilson Golf Apparel": "https://www.wilson.com/en-us/sportswear/men/new-arrivals",
+    "Wilson Sporting Goods": "https://www.wilson.com/en-us/sportswear/men/new-arrivals",
+    "Zero Restriction": "https://www.zerorestriction.com/collections/new-arrivals",
 }
 
 
@@ -1070,22 +1118,10 @@ DROPS_SKIP_BRANDS = {
 
 
 def build_new_arrivals_urls():
-    """Auto-generate new arrivals URLs for all brands not in manual overrides.
-    Tries multiple common new arrivals paths and picks the first that works."""
-    urls = dict(BRAND_NEW_ARRIVALS)  # Start with manual overrides
-    
-    for brand in BRANDS:
-        name = brand["name"]
-        if name in urls or name in DROPS_SKIP_BRANDS:
-            continue
-        
-        base_url = brand["url"].rstrip('/')
-        parsed = urlparse(base_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-        
-        # Try /collections/new-arrivals (works for most Shopify stores)
-        urls[name] = f"{base}/collections/new-arrivals"
-    
+    """Return only manually confirmed new arrivals URLs.
+    No auto-generation — only brands with known working URLs."""
+    urls = dict(BRAND_NEW_ARRIVALS)
+    print(f"🆕 Using {len(urls)} confirmed drops URLs")
     return urls
 
 
@@ -1980,7 +2016,8 @@ def extract_popup_codes_from_scripts(soup):
                 'MORE', 'LESS', 'ONLY', 'JUST', 'BEST', 'GIFT', 'NONE',
                 'TRUE', 'FALSE', 'NULL', 'UNDEFINED', 'FUNCTION', 'RETURN',
                 'CONST', 'VAR', 'LET', 'CLASS', 'SCRIPT', 'TYPE', 'TEXT',
-                'AUTO', 'BLOCK', 'FLEX', 'GRID', 'FIXED', 'STATIC']
+                'AUTO', 'BLOCK', 'FLEX', 'GRID', 'FIXED', 'STATIC',
+                'TRANSFORMATIONSV2', 'TRANSFORMATIONS']
     
     try:
         scripts = soup.find_all('script')
@@ -2412,7 +2449,8 @@ def scrape_brand(brand):
                     '[onclick*="copy"]',
                 ]
                 
-                blacklist = ['HTTP', 'HTTPS', 'USD', 'OFF', 'NEW', 'SALE', 'SHOP', 'FREE']
+                blacklist = ['HTTP', 'HTTPS', 'USD', 'OFF', 'NEW', 'SALE', 'SHOP', 'FREE',
+                            'TRANSFORMATIONSV2', 'TRANSFORMATIONS']
                 
                 for selector in copy_selectors:
                     try:
@@ -3130,7 +3168,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 
 def scrape_all_new_arrivals():
     """Scrape new arrivals from all brands (concurrent)"""
-    all_urls = build_new_arrivals_urls_smart()
+    all_urls = build_new_arrivals_urls()
     print(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
     
     all_new_drops = []
@@ -4014,6 +4052,112 @@ def radar_stats():
 
 @app.route('/api/debug/catalog')
 def debug_catalog():
+    """Debug endpoint to see Impact catalog data"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({"message": "Debug catalog endpoint"})
+
+@app.route('/api/admin/audit-drops')
+def audit_drops():
+    """One-time audit: test all new arrivals URLs and report which work."""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    import time as _time
+    
+    all_urls = dict(BRAND_NEW_ARRIVALS)
+    # Also add auto-generated ones
+    for brand in BRANDS:
+        name = brand["name"]
+        if name not in all_urls and name not in DROPS_SKIP_BRANDS:
+            base_url = brand["url"].rstrip('/')
+            parsed = urlparse(base_url)
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            all_urls[name] = f"{base}/collections/new-arrivals"
+    
+    results = {"working": [], "broken": [], "errors": []}
+    total = len(all_urls)
+    
+    PRODUCT_MARKERS = [
+        'product-card', 'product-item', 'productcard', 'product-tile',
+        'plp-card', 'collection-product', '"@type":"product"',
+        '"@type":"itemlist"', 'data-product', '/products/',
+        'add-to-cart', 'product-grid',
+    ]
+    
+    def test_url(item):
+        name, url = item
+        try:
+            resp = requests.get(url, headers=get_headers(), timeout=8, allow_redirects=True)
+            if resp.status_code != 200:
+                return {"brand": name, "url": url, "status": resp.status_code, "works": False, "reason": f"HTTP {resp.status_code}"}
+            
+            # Check redirect to homepage
+            final = urlparse(resp.url)
+            original = urlparse(url)
+            if final.path in ['/', ''] and original.path not in ['/', '']:
+                return {"brand": name, "url": url, "status": 200, "works": False, "reason": "Redirected to homepage"}
+            
+            text = resp.text.lower()
+            hits = sum(1 for m in PRODUCT_MARKERS if m in text)
+            
+            if hits >= 2:
+                return {"brand": name, "url": url, "status": 200, "works": True, "product_signals": hits}
+            else:
+                # Try alternate paths
+                base_url = urlparse(url)
+                base = f"{base_url.scheme}://{base_url.netloc}"
+                alt_paths = ['/collections/new', '/collections/new-releases', '/collections/whats-new', 
+                            '/collections/new-in', '/collections/latest', '/new-arrivals', '/new', '/whats-new']
+                
+                for alt in alt_paths:
+                    alt_url = base + alt
+                    if alt_url == url:
+                        continue
+                    try:
+                        alt_resp = requests.get(alt_url, headers=get_headers(), timeout=6, allow_redirects=True)
+                        if alt_resp.status_code == 200:
+                            alt_final = urlparse(alt_resp.url)
+                            if alt_final.path not in ['/', '']:
+                                alt_text = alt_resp.text.lower()
+                                alt_hits = sum(1 for m in PRODUCT_MARKERS if m in alt_text)
+                                if alt_hits >= 2:
+                                    return {"brand": name, "url": url, "status": 200, "works": False, 
+                                           "reason": f"No products at current URL", 
+                                           "suggested_url": alt_url, "suggested_signals": alt_hits}
+                    except Exception:
+                        continue
+                
+                return {"brand": name, "url": url, "status": 200, "works": False, "reason": f"Only {hits} product signals"}
+                
+        except Exception as e:
+            return {"brand": name, "url": url, "status": 0, "works": False, "reason": str(e)[:80]}
+    
+    print(f"\n🔍 DROPS URL AUDIT: Testing {total} URLs...")
+    
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(test_url, item): item for item in all_urls.items()}
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            if result["works"]:
+                results["working"].append(result)
+                print(f"  [{i}/{total}] ✅ {result['brand']}")
+            elif result.get("suggested_url"):
+                results["broken"].append(result)
+                print(f"  [{i}/{total}] 🔄 {result['brand']}: try {result['suggested_url']}")
+            else:
+                results["broken"].append(result)
+                print(f"  [{i}/{total}] ❌ {result['brand']}: {result['reason'][:40]}")
+    
+    results["summary"] = {
+        "total": total,
+        "working": len(results["working"]),
+        "broken": len(results["broken"]),
+    }
+    
+    print(f"\n✅ Working: {len(results['working'])} | ❌ Broken: {len(results['broken'])}")
+    
+    return jsonify(results)
     """Debug endpoint to see Impact catalog data"""
     if not check_admin_auth():
         return jsonify({"error": "Unauthorized"}), 401
