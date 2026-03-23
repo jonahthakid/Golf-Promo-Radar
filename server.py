@@ -1582,33 +1582,138 @@ class ImpactAPI:
         return deals
     
     def get_all_deals(self):
-        """Get all deals from Impact, formatted for Radar"""
+        """Get all ACTIVE deals from Impact, formatted for Radar"""
         all_deals = []
         ads = self.get_ads()
         campaigns = {c.get("CampaignId"): c for c in self.get_campaigns()}
+        now = datetime.now()
+        
+        # Words that indicate a real deal vs. generic ad copy
+        deal_signals = ['% off', '$ off', 'save ', 'free shipping', 'bogo', 'buy one',
+                       'clearance', 'sale:', 'flash sale', 'extra ', 'promo code', 'coupon']
+        
+        # Words that indicate NOT a real deal (referral, generic, evergreen)
+        skip_signals = ['refer a friend', 'referral', 'join now', 'sign up today',
+                       'become a member', 'loyalty', 'rewards program', 'earn points',
+                       'gift card', 'subscribe', 'newsletter', 'learn more',
+                       'apply now', 'get started', 'download', 'install']
         
         for ad in ads:
             description = ad.get("Description", "")
-            # Only include if it looks like a real deal
-            if description and len(description) > 10:
-                if any(word in description.lower() for word in ['off', 'save', 'free', 'discount', '%', 'sale', 'refer']):
-                    campaign_name = ad.get("CampaignName", "Unknown")
-                    tracking_link = ad.get("TrackingLink", "")
-                    
-                    # Extract discount percentage if present
-                    discount_match = re.search(r'(\d+)%', description)
-                    discount = int(discount_match.group(1)) if discount_match else 0
-                    
-                    all_deals.append({
-                        "brand": campaign_name,
-                        "promo": description[:150],
-                        "discount": discount,
-                        "affiliate_url": tracking_link,
-                        "source": "impact",
-                        "type": "impact_deal"
-                    })
+            if not description or len(description) < 15:
+                continue
+            
+            desc_lower = description.lower()
+            
+            # Skip generic/referral/evergreen content
+            if any(skip in desc_lower for skip in skip_signals):
+                continue
+            
+            # Must have a concrete deal signal
+            has_deal = any(signal in desc_lower for signal in deal_signals)
+            # Or a specific percentage/dollar amount
+            has_number = bool(re.search(r'\d+%', description) or re.search(r'\$\d+', description))
+            
+            if not has_deal and not has_number:
+                continue
+            
+            # Check date validity if available
+            start_date = ad.get("StartDate") or ad.get("startDate")
+            end_date = ad.get("EndDate") or ad.get("endDate")
+            
+            if end_date:
+                try:
+                    exp = datetime.fromisoformat(end_date.replace('Z', '+00:00').replace('+00:00', ''))
+                    if exp < now:
+                        continue  # Expired
+                except Exception:
+                    pass
+            
+            if start_date:
+                try:
+                    start = datetime.fromisoformat(start_date.replace('Z', '+00:00').replace('+00:00', ''))
+                    if start > now:
+                        continue  # Not started yet
+                except Exception:
+                    pass
+            
+            # Also check for dates embedded in promo text (e.g. "8/25-9/1", "ends 3/15")
+            # Look for date ranges like "8/25-9/1" or "3/15-3/20"
+            date_range = re.search(r'(\d{1,2})/(\d{1,2})\s*[-–]\s*(\d{1,2})/(\d{1,2})', description)
+            if date_range:
+                try:
+                    end_month = int(date_range.group(3))
+                    end_day = int(date_range.group(4))
+                    # Assume current year, or last year if month is way ahead
+                    year = now.year
+                    end_dt = datetime(year, end_month, end_day)
+                    # If the end date is more than 30 days in the future, it's probably last year
+                    if end_dt > now + timedelta(days=60):
+                        end_dt = datetime(year - 1, end_month, end_day)
+                    if end_dt < now:
+                        continue  # Expired
+                except Exception:
+                    pass
+            
+            # Check for seasonal sale names that are clearly past
+            seasonal_expired = [
+                'labor day', 'memorial day', 'black friday', 'cyber monday',
+                'presidents day', 'veterans day', 'independence day', '4th of july',
+                'fourth of july', 'boxing day', 'new year',
+            ]
+            current_month = now.month
+            # Only skip seasonal sales if they're clearly out of season
+            for seasonal in seasonal_expired:
+                if seasonal in desc_lower:
+                    # Labor Day = Sept, Memorial Day = May, Black Friday = Nov, etc.
+                    seasonal_months = {
+                        'labor day': 9, 'memorial day': 5, 'black friday': 11,
+                        'cyber monday': 11, 'presidents day': 2, 'veterans day': 11,
+                        'independence day': 7, '4th of july': 7, 'fourth of july': 7,
+                        'boxing day': 12, 'new year': 1,
+                    }
+                    sale_month = seasonal_months.get(seasonal, 0)
+                    if sale_month and abs(current_month - sale_month) > 1 and abs(current_month - sale_month) < 11:
+                        continue  # Way out of season
+            
+            # Check ad status if available
+            status = ad.get("Status", "").lower()
+            if status and status not in ['active', 'approved', '']:
+                continue
+            
+            campaign_name = ad.get("CampaignName", "Unknown")
+            tracking_link = ad.get("TrackingLink", "")
+            
+            # Extract discount percentage if present
+            discount_match = re.search(r'(\d+)%', description)
+            discount = int(discount_match.group(1)) if discount_match else 0
+            
+            # Sanity check discount (1-90%)
+            if discount > 90:
+                discount = 0
+            
+            all_deals.append({
+                "brand": campaign_name,
+                "promo": clean_promo_text(description[:150]),
+                "discount": discount,
+                "affiliate_url": tracking_link,
+                "source": "impact",
+                "type": "impact_deal"
+            })
         
-        return all_deals
+        # Sort by discount (highest first) and dedupe by brand
+        all_deals.sort(key=lambda x: x.get('discount', 0), reverse=True)
+        
+        # Keep only best deal per brand
+        seen_brands = set()
+        deduped = []
+        for deal in all_deals:
+            brand_key = deal['brand'].lower()
+            if brand_key not in seen_brands:
+                seen_brands.add(brand_key)
+                deduped.append(deal)
+        
+        return deduped
 
 
 
