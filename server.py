@@ -3487,6 +3487,71 @@ def add_subid(url, source="radar"):
     return f"{url}{separator}subId={source}"
 
 
+# =============================================================================
+# SEARCH TRACKING
+# =============================================================================
+SEARCHES_FILE = "searches.json"
+
+def load_searches():
+    return safe_read_json(SEARCHES_FILE, {"searches": [], "stats": {"total": 0, "by_query": {}, "by_date": {}}})
+
+def save_search(query):
+    """Save a search event"""
+    if not query or len(query) < 2:
+        return
+    data = load_searches()
+    now = datetime.now()
+    date_key = now.strftime("%Y-%m-%d")
+    query_lower = query.lower().strip()
+    
+    data["searches"].append({
+        "query": query_lower,
+        "timestamp": now.isoformat()
+    })
+    
+    # Keep only last 5000 searches
+    if len(data["searches"]) > 5000:
+        data["searches"] = data["searches"][-5000:]
+    
+    data["stats"]["total"] = data["stats"].get("total", 0) + 1
+    data["stats"]["by_query"][query_lower] = data["stats"]["by_query"].get(query_lower, 0) + 1
+    data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
+    
+    try:
+        with open(SEARCHES_FILE, "w") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            json.dump(data, f)
+    except Exception:
+        pass
+
+@app.route('/api/track-search')
+def track_search():
+    """Track a search query"""
+    query = request.args.get('q', '').strip()
+    if query and len(query) >= 2:
+        save_search(query)
+    return jsonify({"ok": True})
+
+@app.route('/api/searches')
+def get_searches():
+    """Get search statistics"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = load_searches()
+    
+    top_queries = sorted(
+        data["stats"]["by_query"].items(),
+        key=lambda x: x[1], reverse=True
+    )[:30]
+    
+    return jsonify({
+        "total_searches": data["stats"]["total"],
+        "top_queries": top_queries,
+        "by_date": data["stats"]["by_date"],
+        "recent": data["searches"][-50:][::-1]
+    })
+
+
 @app.route('/go')
 def track_click():
     """Track click and redirect to affiliate URL with subId"""
