@@ -1627,9 +1627,17 @@
             }, 2000);
         }
 
+        let searchTrackTimer = null;
         function handleSearch(value) {
             searchQuery = value;
             updateUI();
+            // Track searches with debounce (only fires after user stops typing for 1s)
+            clearTimeout(searchTrackTimer);
+            if (value && value.length >= 2) {
+                searchTrackTimer = setTimeout(() => {
+                    fetch('/api/track-search?q=' + encodeURIComponent(value));
+                }, 1000);
+            }
         }
 
         async function runScan() {
