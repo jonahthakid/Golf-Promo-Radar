@@ -519,6 +519,26 @@
         </div>
     </div>
 
+    <!-- Email Capture Bar -->
+    <div class="bg-radar-dark border-t border-b border-radar-grid py-8 relative z-10" id="email-capture">
+        <div class="container mx-auto px-4">
+            <div class="max-w-xl mx-auto text-center">
+                <div class="font-loud text-xl text-white tracking-wider mb-2">GET DEAL ALERTS</div>
+                <p class="text-gray-500 text-xs mb-4">Hot drops and codes delivered to your inbox. No spam, just deals.</p>
+                <div class="flex gap-2 max-w-md mx-auto" id="email-form">
+                    <input type="email" id="email-input" placeholder="you@email.com" 
+                        class="flex-grow bg-black border border-radar-grid text-white px-4 py-3 font-tech text-sm focus:border-radar-green outline-none"
+                        onkeydown="if(event.key==='Enter')submitEmail()">
+                    <button onclick="submitEmail()" id="email-btn"
+                        class="px-6 py-3 bg-radar-green text-black font-loud text-sm hover:bg-green-400 transition-colors whitespace-nowrap">
+                        SUBSCRIBE
+                    </button>
+                </div>
+                <div id="email-msg" class="mt-3 text-sm hidden"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="bg-radar-black py-8 pb-16 relative z-10">
         <div class="container mx-auto px-4 text-center">
@@ -1625,6 +1645,78 @@
                 el.classList.remove('copied');
                 el.innerHTML = original;
             }, 2000);
+        }
+
+        // =================================================================
+        // EMAIL SUBSCRIBE (Klaviyo)
+        // =================================================================
+        async function submitEmail() {
+            const input = document.getElementById('email-input');
+            const btn = document.getElementById('email-btn');
+            const msg = document.getElementById('email-msg');
+            const email = input?.value?.trim();
+            
+            if (!email || !email.includes('@') || !email.includes('.')) {
+                msg.textContent = 'Please enter a valid email.';
+                msg.className = 'mt-3 text-sm text-radar-red';
+                msg.classList.remove('hidden');
+                return;
+            }
+            
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+            
+            try {
+                const res = await fetch('https://a.klaviyo.com/client/subscriptions/?company_id=RY7xNN', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'revision': '2024-10-15'
+                    },
+                    body: JSON.stringify({
+                        data: {
+                            type: 'subscription',
+                            attributes: {
+                                custom_source: 'RADAR',
+                                profile: {
+                                    data: {
+                                        type: 'profile',
+                                        attributes: {
+                                            email: email
+                                        }
+                                    }
+                                }
+                            },
+                            relationships: {
+                                list: {
+                                    data: {
+                                        type: 'list',
+                                        id: 'Rpqm2Y'
+                                    }
+                                }
+                            }
+                        }
+                    })
+                });
+                
+                if (res.ok || res.status === 202) {
+                    msg.innerHTML = '<i class="fas fa-check mr-1"></i> You\'re in. Deal alerts incoming.';
+                    msg.className = 'mt-3 text-sm text-radar-green';
+                    msg.classList.remove('hidden');
+                    input.value = '';
+                    btn.innerHTML = 'SUBSCRIBED';
+                    btn.classList.remove('bg-radar-green', 'hover:bg-green-400');
+                    btn.classList.add('bg-gray-700', 'text-gray-400');
+                } else {
+                    throw new Error('Subscribe failed');
+                }
+            } catch (e) {
+                msg.textContent = 'Something went wrong. Try again.';
+                msg.className = 'mt-3 text-sm text-radar-red';
+                msg.classList.remove('hidden');
+                btn.innerHTML = 'SUBSCRIBE';
+                btn.disabled = false;
+            }
         }
 
         let searchTrackTimer = null;
