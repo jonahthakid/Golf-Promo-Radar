@@ -3496,6 +3496,10 @@ def widget():
 def privacy():
     return send_from_directory(BASE_DIR, 'privacy.html')
 
+@app.route('/alerts')
+def alerts():
+    return send_from_directory(BASE_DIR, 'alerts.html')
+
 
 @app.route('/terms')
 @app.route('/terms-of-use')
