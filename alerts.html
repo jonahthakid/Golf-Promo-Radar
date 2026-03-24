@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deal Alerts - RADAR</title>
+<meta name="description" content="Get golf deals, promo codes, and new drops delivered to your inbox. Alerts from 170+ brands.">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Fjalla+One&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root{--green:#00ff41;--bg:#0a0f0a;--card:#111;--grid:#1a2f1c}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:#c8c8c8;font-family:'Inter',sans-serif;min-height:100vh;display:flex;flex-direction:column}
+
+.header{border-bottom:1px solid var(--grid);padding:16px 24px;text-align:center}
+.header a{text-decoration:none}
+.header h1{font-family:'Fjalla One',sans-serif;color:var(--green);font-size:20px;letter-spacing:3px}
+
+.hero{flex-grow:1;display:flex;align-items:center;justify-content:center;padding:40px 20px}
+.hero-inner{max-width:500px;text-align:center}
+
+.icon-circle{width:80px;height:80px;border:2px solid var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px}
+.icon-circle i{color:var(--green);font-size:28px}
+
+h2{font-family:'Fjalla One',sans-serif;color:#fff;font-size:36px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}
+.sub{color:#666;font-size:15px;line-height:1.6;margin-bottom:32px}
+.sub strong{color:#999}
+
+.form-row{display:flex;gap:8px;margin-bottom:16px}
+.form-row input{flex-grow:1;background:#000;border:2px solid var(--grid);color:#fff;padding:14px 18px;font-family:'Inter',sans-serif;font-size:15px;outline:none;transition:border-color 0.2s}
+.form-row input:focus{border-color:var(--green)}
+.form-row input::placeholder{color:#444}
+.form-row button{background:var(--green);color:#000;border:none;padding:14px 28px;font-family:'Fjalla One',sans-serif;font-size:16px;letter-spacing:2px;cursor:pointer;text-transform:uppercase;white-space:nowrap;transition:background 0.2s}
+.form-row button:hover{background:#00cc33}
+
+#alert-msg{font-size:13px;min-height:20px}
+.text-green{color:var(--green)}
+.text-red{color:#ff3333}
+
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px;text-align:left}
+.feature{background:var(--card);border:1px solid var(--grid);padding:16px}
+.feature i{color:var(--green);margin-bottom:8px;font-size:16px}
+.feature h4{font-family:'Fjalla One',sans-serif;color:#fff;font-size:13px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.feature p{color:#555;font-size:11px;line-height:1.5}
+
+.fine-print{color:#444;font-size:10px;margin-top:24px}
+.fine-print a{color:#555}
+
+.footer{border-top:1px solid var(--grid);padding:16px;text-align:center}
+.footer a{color:var(--green);text-decoration:none;font-family:'Fjalla One',sans-serif;font-size:14px;letter-spacing:2px}
+
+@media(max-width:600px){
+    .features{grid-template-columns:1fr}
+    .form-row{flex-direction:column}
+    h2{font-size:28px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+    <a href="/"><h1>RADAR</h1></a>
+</div>
+
+<div class="hero">
+    <div class="hero-inner">
+        <div class="icon-circle">
+            <i class="fas fa-satellite-dish"></i>
+        </div>
+        
+        <h2>Deal Alerts</h2>
+        <p class="sub">
+            The best golf deals from <strong>170+ brands</strong> — promo codes, new drops, and clearance events — delivered to your inbox. We scan so you don't have to.
+        </p>
+        
+        <div class="form-row">
+            <input type="email" id="alert-email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')subscribeAlerts()">
+            <button onclick="subscribeAlerts()" id="alert-btn">SUBSCRIBE</button>
+        </div>
+        <div id="alert-msg"></div>
+        
+        <div class="features">
+            <div class="feature">
+                <i class="fas fa-bolt"></i>
+                <h4>Real-Time</h4>
+                <p>Deals detected within minutes, not hours. Codes verified live.</p>
+            </div>
+            <div class="feature">
+                <i class="fas fa-filter"></i>
+                <h4>Curated</h4>
+                <p>Only the good stuff. No spam, no expired codes, no junk.</p>
+            </div>
+            <div class="feature">
+                <i class="fas fa-tags"></i>
+                <h4>170+ Brands</h4>
+                <p>From TaylorMade to Malbon, FootJoy to Sugarloaf. Full coverage.</p>
+            </div>
+        </div>
+        
+        <p class="fine-print">
+            No spam. Unsubscribe anytime. See our <a href="/privacy">Privacy Policy</a>.
+        </p>
+    </div>
+</div>
+
+<div class="footer">
+    <a href="/">← BACK TO RADAR</a>
+</div>
+
+<script>
+async function subscribeAlerts() {
+    const input = document.getElementById('alert-email');
+    const btn = document.getElementById('alert-btn');
+    const msg = document.getElementById('alert-msg');
+    const email = input?.value?.trim();
+    
+    if (!email || !email.includes('@') || !email.includes('.')) {
+        msg.textContent = 'Please enter a valid email.';
+        msg.className = 'text-red';
+        return;
+    }
+    
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch('https://a.klaviyo.com/client/subscriptions/?company_id=RY7xNN', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'revision': '2024-10-15'
+            },
+            body: JSON.stringify({
+                data: {
+                    type: 'subscription',
+                    attributes: {
+                        custom_source: 'RADAR Alerts Page',
+                        profile: {
+                            data: {
+                                type: 'profile',
+                                attributes: {
+                                    email: email
+                                }
+                            }
+                        }
+                    },
+                    relationships: {
+                        list: {
+                            data: {
+                                type: 'list',
+                                id: 'Rpqm2Y'
+                            }
+                        }
+                    }
+                }
+            })
+        });
+        
+        if (res.ok || res.status === 202) {
+            msg.innerHTML = '<i class="fas fa-check"></i> You\'re in. Deal alerts are on the way.';
+            msg.className = 'text-green';
+            input.value = '';
+            btn.innerHTML = 'SUBSCRIBED ✓';
+            btn.style.background = '#333';
+            btn.style.color = '#666';
+        } else {
+            throw new Error('Failed');
+        }
+    } catch (e) {
+        msg.textContent = 'Something went wrong. Try again.';
+        msg.className = 'text-red';
+        btn.innerHTML = 'SUBSCRIBE';
+        btn.disabled = false;
+    }
+}
+</script>
+</body>
+</html>
