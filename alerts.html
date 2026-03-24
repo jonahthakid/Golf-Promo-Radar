@@ -124,10 +124,7 @@ async function subscribeAlerts() {
                             data: {
                                 type: 'profile',
                                 attributes: {
-                                    email: email,
-                                    subscriptions: {
-                                        email: { marketing: { consent: 'SUBSCRIBED' } }
-                                    }
+                                    email: email
                                 }
                             }
                         }
@@ -143,6 +140,7 @@ async function subscribeAlerts() {
                 }
             })
         });
+        console.log('Klaviyo response:', res.status, res.statusText);
         if (res.ok || res.status === 202) {
             msg.innerHTML = '<i class="fas fa-check"></i> You\'re in. Deal alerts are on the way.';
             msg.className = 'text-ok';
@@ -151,10 +149,11 @@ async function subscribeAlerts() {
             btn.style.background = '#333';
             btn.style.color = '#666';
         } else {
-            throw new Error('Failed');
+            throw new Error('Status: ' + res.status);
         }
     } catch (e) {
-        msg.textContent = 'Something went wrong. Try again.';
+        console.error('Klaviyo error:', e);
+        msg.textContent = 'Something went wrong (' + e.message + '). Try again.';
         msg.className = 'text-red';
         btn.innerHTML = 'SUBSCRIBE';
         btn.disabled = false;
