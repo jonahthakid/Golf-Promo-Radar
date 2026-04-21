@@ -457,6 +457,25 @@
                 </button>
             </div>
 
+            <!-- ============================================================ -->
+            <!-- ClubWRX Insider Intel — slim member-only callout strip      -->
+            <!-- ============================================================ -->
+            <a id="clubwrx-strip"
+               href="/go?url=https%3A%2F%2Fwww.golfwrx.com%2Fclubwrx%3Futm_source%3Dradar%26utm_medium%3Dstrip%26utm_campaign%3Dclubwrx_insider_intel&brand=ClubWRX&source=insider-intel"
+               target="_blank" rel="noopener"
+               class="block bg-radar-dark border border-radar-grid hover:border-radar-green transition-colors duration-300 mb-6 group">
+                <div class="px-4 py-3 flex items-center gap-3 text-xs">
+                    <span class="w-2 h-2 bg-radar-red rounded-full animate-pulse flex-shrink-0"></span>
+                    <span class="text-white font-bold tracking-widest whitespace-nowrap">INSIDER INTEL</span>
+                    <span class="text-gray-700">//</span>
+                    <span class="text-gray-400 flex-grow truncate">Member-only deals from Titleist, Wilson, Sugarloaf Social Club + dozens more</span>
+                    <span class="text-white font-loud text-sm tracking-wider whitespace-nowrap group-hover:translate-x-1 transition-transform">
+                        JOIN CLUBWRX <i class="fas fa-arrow-right text-[10px] ml-1"></i>
+                    </span>
+                </div>
+            </a>
+            <!-- ============================================================ -->
+
             <!-- Deals Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deals-grid">
                 <!-- Loading state -->
@@ -1942,6 +1961,41 @@
                 }, 300);
             }
         }, 3000);
+
+        // =================================================================
+        // CLUBWRX INSIDER INTEL — GA4 Promotions tracking
+        // =================================================================
+        (function () {
+            const strip = document.getElementById('clubwrx-strip');
+            if (!strip) return;
+
+            const promoPayload = {
+                creative_name: 'insider_intel_strip_v1',
+                creative_slot: 'right_column_above_grid',
+                promotion_id:  'clubwrx_insider_intel',
+                promotion_name: 'ClubWRX Insider Intel'
+            };
+
+            // Impression — fires once when the strip is 50% in view
+            if ('IntersectionObserver' in window) {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting && typeof gtag === 'function') {
+                            gtag('event', 'view_promotion', promoPayload);
+                            observer.unobserve(entry.target);
+                        }
+                    });
+                }, { threshold: 0.5 });
+                observer.observe(strip);
+            }
+
+            // Click — fires alongside the existing deal_click handler
+            strip.addEventListener('click', () => {
+                if (typeof gtag === 'function') {
+                    gtag('event', 'select_promotion', promoPayload);
+                }
+            });
+        })();
 
         // =================================================================
         // INIT
