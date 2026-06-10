@@ -4425,24 +4425,56 @@ def audit_drops():
 
 
 # =============================================================================
-# MAIN
+# BACKGROUND JOBS
 # =============================================================================
-if __name__ == "__main__":
+# Under gunicorn the `if __name__ == "__main__"` block never runs, so the
+# scheduler used to silently never start in prod. start_background_jobs()
+# runs at module import time so each worker triggers it once; the guard
+# prevents double-start if anything calls it twice.
+#
+# IMPORTANT: gunicorn must run with exactly one worker (see railway.toml)
+# or the scraper will run N times in parallel and the JSON state writers
+# will fight each other across processes (file locks don't help across
+# different PIDs hitting a single file via atomic_write_json with the
+# same tmp path).
+_scheduler_started = False
+_scheduler_lock = threading.Lock()
+
+
+def start_background_jobs():
+    global _scheduler_started
+    with _scheduler_lock:
+        if _scheduler_started:
+            return
+        _scheduler_started = True
+
     print("\n" + "="*60)
     print("⛳ GOLF RADAR - Golf Promo Intelligence")
     print(f"📡 Monitoring {len(BRANDS)} brands")
     print("="*60)
-    
-    # Run initial scrape in background
-    print(f"\n🔄 Starting initial scan...")
-    thread = threading.Thread(target=run_scraper)
-    thread.start()
-    
-    # Set up scheduler
+
+    print("\n🔄 Starting initial scan...")
+    threading.Thread(target=run_scraper, daemon=True).start()
+
     scheduler = BackgroundScheduler()
-    scheduler.add_job(run_scraper, 'interval', minutes=REFRESH_INTERVAL_MINUTES)
+    scheduler.add_job(
+        run_scraper,
+        'interval',
+        minutes=REFRESH_INTERVAL_MINUTES,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     print(f"⏰ Auto-refresh every {REFRESH_INTERVAL_MINUTES} minutes")
-    
+
+
+# Start jobs on import so gunicorn workers pick them up.
+start_background_jobs()
+
+
+# =============================================================================
+# MAIN (local dev only)
+# =============================================================================
+if __name__ == "__main__":
     print(f"\n🌐 Server starting at http://localhost:{PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=False)

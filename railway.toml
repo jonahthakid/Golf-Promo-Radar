@@ -2,7 +2,11 @@
 builder = "NIXPACKS"
 
 [deploy]
-startCommand = "python server.py"
+# IMPORTANT: exactly one worker. Multiple workers = duplicate scrapers
+# (each worker runs its own BackgroundScheduler at import time) and
+# cross-process write contention on the JSON state files. Threads scale
+# request handling instead.
+startCommand = "gunicorn --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT server:app"
 healthcheckPath = "/api/status"
 healthcheckTimeout = 300
 
