@@ -3562,11 +3562,31 @@ def trigger_refresh():
 
 @app.route('/api/status')
 def status():
+    # Always HTTP 200 so Railway's healthcheck doesn't restart-loop when
+    # the scraper falls behind. `stale: true` is a signal for external
+    # uptime monitoring to alert on.
+    minutes_since_update = None
+    stale = False
+    last_updated = None
+    data = safe_read_json(DATA_FILE, {})
+    raw_last_updated = data.get("lastUpdated")
+    if raw_last_updated:
+        try:
+            ts = datetime.fromisoformat(raw_last_updated)
+            minutes_since_update = round((datetime.now() - ts).total_seconds() / 60, 1)
+            stale = minutes_since_update > REFRESH_INTERVAL_MINUTES * 2.5
+            last_updated = raw_last_updated
+        except (TypeError, ValueError):
+            pass
+
     return jsonify({
         "status": "ok",
         "data_file_exists": os.path.exists(DATA_FILE),
         "brand_count": len(BRANDS),
-        "refresh_interval_minutes": REFRESH_INTERVAL_MINUTES
+        "refresh_interval_minutes": REFRESH_INTERVAL_MINUTES,
+        "lastUpdated": last_updated,
+        "minutes_since_update": minutes_since_update,
+        "stale": stale,
     })
 
 
