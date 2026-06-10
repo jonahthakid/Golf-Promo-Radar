@@ -7,6 +7,7 @@ Integrates with Impact Radius for affiliate tracking + deals
 
 
 import json
+import logging
 import re
 import os
 import time
@@ -36,6 +37,16 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+# Logging. Emoji prefixes in messages are intentional — they make Railway
+# logs scannable. Levels: info for status, warning for ⚠️, error for ❌.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("radar")
+
+
 
 
 
@@ -63,7 +74,7 @@ def fetch_reddit_intel(limit=15):
             resp = requests.get(source["url"], headers=headers, timeout=10)
             
             if resp.status_code == 429:
-                print(f"⚠️  Reddit rate limited on r/{source['sub']}")
+                logger.warning(f"⚠️  Reddit rate limited on r/{source['sub']}")
                 continue
                 
             if resp.status_code != 200:
@@ -134,7 +145,7 @@ def fetch_reddit_intel(limit=15):
                     continue
                     
         except Exception as e:
-            print(f"⚠️  Reddit scrape failed for r/{source['sub']}: {e}")
+            logger.warning(f"⚠️  Reddit scrape failed for r/{source['sub']}: {e}")
             continue
     
     # Sort by score (most upvoted first) then limit
@@ -199,7 +210,7 @@ def fetch_deal_aggregator_intel(limit=15):
             resp = requests.get(source["url"], headers=headers, timeout=10)
             
             if resp.status_code != 200:
-                print(f"  ⚠️  {source['name']}: HTTP {resp.status_code}")
+                logger.warning(f"  ⚠️  {source['name']}: HTTP {resp.status_code}")
                 continue
             
             # Parse RSS/XML
@@ -271,10 +282,10 @@ def fetch_deal_aggregator_intel(limit=15):
             
             found = sum(1 for d in intel_deals if d.get("source") == source["name"])
             if found:
-                print(f"  🔍 {source['name']}: {found} golf deals found")
+                logger.info(f"  🔍 {source['name']}: {found} golf deals found")
                     
         except Exception as e:
-            print(f"  ⚠️  {source['name']} scrape failed: {e}")
+            logger.warning(f"  ⚠️  {source['name']} scrape failed: {e}")
             continue
     
     # --- Slickdeals HTML fallback (if RSS returned nothing) ---
@@ -337,9 +348,9 @@ def fetch_deal_aggregator_intel(limit=15):
                 
                 sd_html = sum(1 for d in intel_deals if d.get('source') == 'Slickdeals')
                 if sd_html:
-                    print(f"  🔍 Slickdeals (HTML): {sd_html} golf deals found")
+                    logger.info(f"  🔍 Slickdeals (HTML): {sd_html} golf deals found")
         except Exception as e:
-            print(f"  ⚠️  Slickdeals HTML fallback failed: {e}")
+            logger.warning(f"  ⚠️  Slickdeals HTML fallback failed: {e}")
     
     # Sort by discount (highest first)
     intel_deals.sort(key=lambda x: x.get('discount') or 0, reverse=True)
@@ -355,18 +366,18 @@ def fetch_all_community_intel(limit=25):
         reddit = fetch_reddit_intel(limit=15)
         if reddit:
             all_deals.extend(reddit)
-            print(f"🔴 Reddit: {len(reddit)} deals")
+            logger.info(f"🔴 Reddit: {len(reddit)} deals")
     except Exception as e:
-        print(f"⚠️  Reddit fetch failed: {e}")
+        logger.warning(f"⚠️  Reddit fetch failed: {e}")
     
     # Deal aggregators (Slickdeals, HotDeals, DealNews)
     try:
         aggregator = fetch_deal_aggregator_intel(limit=15)
         if aggregator:
             all_deals.extend(aggregator)
-            print(f"🔍 Aggregators: {len(aggregator)} deals")
+            logger.info(f"🔍 Aggregators: {len(aggregator)} deals")
     except Exception as e:
-        print(f"⚠️  Aggregator fetch failed: {e}")
+        logger.warning(f"⚠️  Aggregator fetch failed: {e}")
     
     # Dedupe by URL
     seen = set()
@@ -417,9 +428,9 @@ DEAL_HISTORY_FILE = os.path.join(DATA_DIR, "deal_history.json")
 DROPS_HISTORY_FILE = os.path.join(DATA_DIR, "drops_history.json")
 PORT = int(os.environ.get("PORT", 5000))
 
-print(f"📂 DATA_DIR = {DATA_DIR}")
+logger.info(f"📂 DATA_DIR = {DATA_DIR}")
 for _f in (DATA_FILE, DEAL_HISTORY_FILE, DROPS_HISTORY_FILE):
-    print(f"   {'✅' if os.path.exists(_f) else '⬜'} {os.path.basename(_f)}")
+    logger.info(f"   {'✅' if os.path.exists(_f) else '⬜'} {os.path.basename(_f)}")
 
 
 # Freshness settings
@@ -454,7 +465,7 @@ def safe_read_json(filepath, default=None):
             fcntl.flock(f, fcntl.LOCK_SH)
             return json.load(f)
     except (json.JSONDecodeError, IOError) as e:
-        print(f"⚠️  Failed to read {filepath}: {e}")
+        logger.warning(f"⚠️  Failed to read {filepath}: {e}")
         return default if default is not None else {}
 
 
@@ -639,7 +650,7 @@ def update_deal_history(deals, history):
         del history[key]
     
     if expired_keys:
-        print(f"🧹 Cleaned up {len(expired_keys)} stale deals from history")
+        logger.info(f"🧹 Cleaned up {len(expired_keys)} stale deals from history")
     
     return history, fresh_deals
 
@@ -738,7 +749,7 @@ def update_drops_history(drops, history):
 
 
     if expired_keys:
-        print(f"🧹 Cleaned up {len(expired_keys)} stale drops from history")
+        logger.info(f"🧹 Cleaned up {len(expired_keys)} stale drops from history")
 
 
     # Sort: new drops first, then by recency within each group
@@ -1135,7 +1146,7 @@ def build_new_arrivals_urls():
     """Return only manually confirmed new arrivals URLs.
     No auto-generation — only brands with known working URLs."""
     urls = dict(BRAND_NEW_ARRIVALS)
-    print(f"🆕 Using {len(urls)} confirmed drops URLs")
+    logger.info(f"🆕 Using {len(urls)} confirmed drops URLs")
     return urls
 
 
@@ -1150,7 +1161,7 @@ def load_drops_url_cache():
         if os.path.exists(_drops_urls_cache_file):
             with open(_drops_urls_cache_file) as f:
                 _discovered_drops_urls = json.load(f)
-                print(f"📂 Loaded {len(_discovered_drops_urls)} cached drops URLs")
+                logger.info(f"📂 Loaded {len(_discovered_drops_urls)} cached drops URLs")
     except Exception:
         _discovered_drops_urls = {}
 
@@ -1160,7 +1171,7 @@ def save_drops_url_cache():
         with open(_drops_urls_cache_file, 'w') as f:
             json.dump(_discovered_drops_urls, f, indent=2)
     except Exception as e:
-        print(f"⚠️  Failed to save drops URL cache: {e}")
+        logger.warning(f"⚠️  Failed to save drops URL cache: {e}")
 
 
 # Common new arrivals paths across e-commerce platforms
@@ -1220,7 +1231,7 @@ def discover_new_arrivals_url(brand):
             ])
             
             if has_products:
-                print(f"  🔍 {name}: Found drops at {path}")
+                logger.info(f"  🔍 {name}: Found drops at {path}")
                 _discovered_drops_urls[name] = {
                     "url": test_url,
                     "path": path,
@@ -1267,7 +1278,7 @@ def build_new_arrivals_urls_smart():
     # Only discover if cache was empty (first boot) — limit to 30 brands per run
     if brands_to_discover:
         batch = brands_to_discover[:30]
-        print(f"🔍 Discovering drops URLs for {len(batch)} of {len(brands_to_discover)} brands...")
+        logger.info(f"🔍 Discovering drops URLs for {len(batch)} of {len(brands_to_discover)} brands...")
         
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {executor.submit(discover_new_arrivals_url, b): b for b in batch}
@@ -1278,7 +1289,7 @@ def build_new_arrivals_urls_smart():
                     if url:
                         urls[brand["name"]] = url
                 except Exception as e:
-                    print(f"  ⚠️  {brand['name']}: Discovery failed: {e}")
+                    logger.warning(f"  ⚠️  {brand['name']}: Discovery failed: {e}")
     
     # For remaining brands without discovered URLs, fall back to /collections/new-arrivals
     for brand in BRANDS:
@@ -1290,7 +1301,7 @@ def build_new_arrivals_urls_smart():
         base = f"{parsed.scheme}://{parsed.netloc}"
         urls[name] = f"{base}/collections/new-arrivals"
     
-    print(f"🆕 Total drops URLs: {len(urls)} ({len(BRAND_NEW_ARRIVALS)} manual + {len(urls) - len(BRAND_NEW_ARRIVALS)} auto/discovered)")
+    logger.info(f"🆕 Total drops URLs: {len(urls)} ({len(BRAND_NEW_ARRIVALS)} manual + {len(urls) - len(BRAND_NEW_ARRIVALS)} auto/discovered)")
     return urls
 
 
@@ -1327,7 +1338,7 @@ class ImpactAPI:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Impact API Error: {e}")
+            logger.info(f"Impact API Error: {e}")
             return None
     
     def get_campaigns(self, force_refresh=False):
@@ -1378,7 +1389,7 @@ class ImpactAPI:
                 return data["CatalogItems"]
                 
         except Exception as e:
-            print(f"Catalog fetch error: {e}")
+            logger.info(f"Catalog fetch error: {e}")
         return []
     
     def get_featured_products(self, count=4):
@@ -1737,9 +1748,9 @@ impact_api = None
 if IMPACT_ENABLED:
     try:
         impact_api = ImpactAPI()
-        print("✅ Impact Radius API initialized")
+        logger.info("✅ Impact Radius API initialized")
     except Exception as e:
-        print(f"⚠️  Impact API init failed: {e}")
+        logger.warning(f"⚠️  Impact API init failed: {e}")
         impact_api = None
 
 
@@ -1759,7 +1770,7 @@ def merge_impact_tracking_links(brands):
                 updated += 1
     
     if updated > 0:
-        print(f"✅ Added {updated} Impact tracking links to brands")
+        logger.info(f"✅ Added {updated} Impact tracking links to brands")
     
     return brands
 
@@ -2746,10 +2757,10 @@ def scrape_brand(brand):
 def run_scraper():
     """Run full scrape of all brands"""
     try:
-        print(f"\n{'='*60}")
-        print(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"📡 Scanning {len(BRANDS)} brands...")
-        print(f"{'='*60}")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🔄 GOLF RADAR - Starting scan at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"📡 Scanning {len(BRANDS)} brands...")
+        logger.info(f"{'='*60}")
         
         results = []
         clearance_results = []
@@ -2765,70 +2776,70 @@ def run_scraper():
                 try:
                     result = future.result()
                     if result["error"]:
-                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
+                        logger.error(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ {result['error'][:30]}")
                         error_count += 1
                     elif result["promo"]:
                         code_str = f" (code: {result['code']})" if result['code'] else ""
-                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
+                        logger.info(f"  [{i}/{len(BRANDS)}] {brand['name']}... ✓ Found promo{code_str}")
                         success_count += 1
                         results.append(result)
                     else:
-                        print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
+                        logger.info(f"  [{i}/{len(BRANDS)}] {brand['name']}... ○ No promo")
                         results.append(result)
                 except Exception as e:
-                    print(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
+                    logger.error(f"  [{i}/{len(BRANDS)}] {brand['name']}... ❌ Thread error: {e}")
                     error_count += 1
         
         # Now scan sale pages (wrapped in try/except so it doesn't break main scan)
-        print(f"\n{'='*60}")
-        print(f"🏷️  Scanning sale pages...")
-        print(f"{'='*60}")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🏷️  Scanning sale pages...")
+        logger.info(f"{'='*60}")
         
         try:
             clearance_results = scan_sale_pages(BRANDS)
         except Exception as e:
-            print(f"⚠️  Sale page scan failed: {e}")
+            logger.warning(f"⚠️  Sale page scan failed: {e}")
             clearance_results = []
         
         # Fetch Impact deals
-        print(f"\n{'='*60}")
-        print(f"🔗 Fetching Impact Radius deals...")
-        print(f"{'='*60}")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🔗 Fetching Impact Radius deals...")
+        logger.info(f"{'='*60}")
         
         try:
             if impact_api:
                 impact_deals = impact_api.get_all_deals()
-                print(f"✅ Found {len(impact_deals)} deals from Impact")
+                logger.info(f"✅ Found {len(impact_deals)} deals from Impact")
             else:
-                print("⚠️  Impact API not available")
+                logger.warning("⚠️  Impact API not available")
         except Exception as e:
-            print(f"⚠️  Impact deals fetch failed: {e}")
+            logger.warning(f"⚠️  Impact deals fetch failed: {e}")
             impact_deals = []
         
         # Scan for new drops / new arrivals
         # Brief delay to reduce 429s — main scraper just hit many of these same domains
-        print(f"\n{'='*60}")
-        print(f"🆕 Scanning new arrivals pages (15s cooldown)...")
-        print(f"{'='*60}")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🆕 Scanning new arrivals pages (15s cooldown)...")
+        logger.info(f"{'='*60}")
         time.sleep(15)
         
         new_drops = []
         try:
             new_drops = scrape_all_new_arrivals()
         except Exception as e:
-            print(f"⚠️  New arrivals scan failed: {e}")
+            logger.warning(f"⚠️  New arrivals scan failed: {e}")
             new_drops = []
         
-        print(f"\n{'='*60}")
-        print(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
-        print(f"{'='*60}\n")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"✅ Scan complete: {success_count} promos, {len(clearance_results)} clearance, {len(impact_deals)} impact deals, {len(new_drops)} new drops, {error_count} errors")
+        logger.info(f"{'='*60}\n")
         
         # Always save main results even if clearance/impact fails
         if results:
             try:
                 save_data(results, clearance_results, impact_deals, new_drops)
             except Exception as e:
-                print(f"❌ CRITICAL: save_data failed: {e}")
+                logger.error(f"❌ CRITICAL: save_data failed: {e}")
                 import traceback
                 traceback.print_exc()
         
@@ -2836,7 +2847,7 @@ def run_scraper():
     
     except Exception as e:
         # Top-level catch: prevents APScheduler from silently killing the job
-        print(f"❌ CRITICAL: run_scraper crashed: {e}")
+        logger.error(f"❌ CRITICAL: run_scraper crashed: {e}")
         import traceback
         traceback.print_exc()
         return []
@@ -2914,7 +2925,7 @@ def mine_sitemap_for_sale_urls(base_url, max_urls=5):
         found_urls = list(set(found_urls))[:max_urls]
         
         if found_urls:
-            print(f"  📍 Sitemap: Found {len(found_urls)} sale URLs")
+            logger.info(f"  📍 Sitemap: Found {len(found_urls)} sale URLs")
         
         return found_urls
         
@@ -3083,10 +3094,10 @@ def scan_sale_pages(brands):
             try:
                 result = future.result()
                 if result:
-                    print(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
+                    logger.info(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
                     clearance.append(result)
             except Exception as e:
-                print(f"  ⚠️  {brand['name']} sale scan error: {e}")
+                logger.warning(f"  ⚠️  {brand['name']} sale scan error: {e}")
     
     return clearance
 
@@ -3103,7 +3114,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
     try:
         response = requests.get(new_arrivals_url, headers=get_headers(), timeout=8, allow_redirects=True)
         if response.status_code != 200:
-            print(f"  ⚠️  {brand_name}: HTTP {response.status_code}")
+            logger.warning(f"  ⚠️  {brand_name}: HTTP {response.status_code}")
             return []
         
         soup = BeautifulSoup(response.text, 'lxml')
@@ -3197,7 +3208,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
             product_elements = soup.select('a[href*="/product/"], a[href*="/p/"], a[href*="/shop/"]')[:12]
         
         if not product_elements:
-            print(f"  ○  {brand_name}: 200 OK but no product elements matched")
+            logger.info(f"  ○  {brand_name}: 200 OK but no product elements matched")
             return []
         
         for elem in product_elements:
@@ -3279,7 +3290,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
         return products
     
     except Exception as e:
-        print(f"  ⚠️  New arrivals scrape failed for {brand_name}: {e}")
+        logger.warning(f"  ⚠️  New arrivals scrape failed for {brand_name}: {e}")
         return []
 
 
@@ -3288,7 +3299,7 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 def scrape_all_new_arrivals():
     """Scrape new arrivals from all brands (concurrent)"""
     all_urls = build_new_arrivals_urls()
-    print(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
+    logger.info(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
     
     all_new_drops = []
     
@@ -3302,7 +3313,7 @@ def scrape_all_new_arrivals():
             try:
                 brand_name, products = future.result()
                 if products:
-                    print(f"  🆕 {brand_name}: {len(products)} new products")
+                    logger.info(f"  🆕 {brand_name}: {len(products)} new products")
                     for p in products:
                         p["source_url"] = all_urls[brand_name]
                         p["category"] = next((b.get("category", "apparel") for b in BRANDS if b["name"] == brand_name), "apparel")
@@ -3310,9 +3321,9 @@ def scrape_all_new_arrivals():
                     all_new_drops.extend(products)
             except Exception as e:
                 brand_name = futures[future][0]
-                print(f"  ⚠️  {brand_name}: {e}")
+                logger.warning(f"  ⚠️  {brand_name}: {e}")
     
-    print(f"🆕 Found {len(all_new_drops)} total new products")
+    logger.info(f"🆕 Found {len(all_new_drops)} total new products")
     return all_new_drops
 
 
@@ -3399,22 +3410,22 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         if os.path.exists(intel_file):
             with open(intel_file) as f:
                 data["priorityIntel"] = json.load(f)
-                print(f"🎯 Priority Intel: {len(data['priorityIntel'])} products loaded from config")
+                logger.info(f"🎯 Priority Intel: {len(data['priorityIntel'])} products loaded from config")
     except Exception as e:
-        print(f"⚠️  Priority Intel config load failed: {e}")
+        logger.warning(f"⚠️  Priority Intel config load failed: {e}")
     
     # Fetch community intel (Reddit + Slickdeals + HotDeals + DealNews)
     try:
         community_intel = fetch_all_community_intel(limit=25)
         if community_intel:
             data["communityIntel"] = community_intel
-            print(f"🔍 Community Intel: {len(community_intel)} total deals from all sources")
+            logger.info(f"🔍 Community Intel: {len(community_intel)} total deals from all sources")
     except Exception as e:
-        print(f"⚠️  Community intel fetch failed: {e}")
+        logger.warning(f"⚠️  Community intel fetch failed: {e}")
     
     atomic_write_json(DATA_FILE, data)
     
-    print(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new), {len(fresh_drops)} drops ({new_drops_count} new)")
+    logger.info(f"💾 Saved: {len(fresh_promos)} promos ({new_promos} new), {len(data['codes'])} codes, {len(data['emailOffers'])} email offers, {len(fresh_clearance)} clearance ({new_clearance} new), {len(fresh_impact)} impact deals ({new_impact} new), {len(fresh_drops)} drops ({new_drops_count} new)")
 
 
 
@@ -3450,9 +3461,16 @@ def load_data():
 # FLASK APP
 # =============================================================================
 app = Flask(__name__, static_folder='.')
-app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production-set-SECRET_KEY-env-var")
-if app.secret_key == "change-me-in-production-set-SECRET_KEY-env-var":
-    print("⚠️  WARNING: Using default SECRET_KEY - set SECRET_KEY env var for persistent sessions")
+_SECRET_KEY_DEFAULT = "change-me-in-production-set-SECRET_KEY-env-var"
+app.secret_key = os.environ.get("SECRET_KEY", _SECRET_KEY_DEFAULT)
+if app.secret_key == _SECRET_KEY_DEFAULT:
+    # On Railway, refuse to boot without a real key. Sessions would reset on
+    # every restart and the admin login flow would silently break.
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        raise RuntimeError(
+            "SECRET_KEY must be set in Railway (current value is the dev default)."
+        )
+    logger.warning("⚠️  WARNING: Using default SECRET_KEY - set SECRET_KEY env var for persistent sessions")
 CORS(app)
 
 # Rate limiting (in-memory; single process). Per-route limits applied via
@@ -3493,20 +3511,6 @@ def logo():
 @app.route('/radar_logo.png')
 def logo_legacy():
     return send_from_directory(BASE_DIR, 'radar_logo.svg', mimetype='image/svg+xml')
-
-
-
-
-@app.route('/preview')
-def preview():
-    return send_from_directory(BASE_DIR, 'golf_promo_radar_preview.html')
-
-
-
-
-@app.route('/classic')
-def classic():
-    return send_from_directory(BASE_DIR, 'golf_promo_radar_classic.html')
 
 
 
@@ -3634,11 +3638,17 @@ def save_click(brand, url, source="radar"):
 
 
 def add_subid(url, source="radar"):
-    """Add subId parameter to affiliate URL for Impact tracking"""
+    """Add subId parameter to affiliate URL for Impact tracking.
+    No-op if subId is already present (some affiliate links arrive with one).
+    URL-encodes source so unexpected chars in the source label don't corrupt
+    the query string."""
     if not url:
         return url
+    if "subId=" in url:
+        return url
+    from urllib.parse import quote
     separator = "&" if "?" in url else "?"
-    return f"{url}{separator}subId={source}"
+    return f"{url}{separator}subId={quote(str(source), safe='')}"
 
 
 # =============================================================================
@@ -3678,7 +3688,7 @@ def save_search(query):
         try:
             atomic_write_json(SEARCHES_FILE, data)
         except Exception as e:
-            print(f"⚠️  Failed to write {SEARCHES_FILE}: {e}")
+            logger.warning(f"⚠️  Failed to write {SEARCHES_FILE}: {e}")
 
 @app.route('/api/track-search')
 @limiter.limit("30 per minute")
@@ -3759,7 +3769,7 @@ def track_click():
         )
         
         if not is_allowed:
-            print(f"⚠️  Blocked redirect to untrusted domain: {url_domain}")
+            logger.warning(f"⚠️  Blocked redirect to untrusted domain: {url_domain}")
             return "Untrusted redirect destination", 403
             
     except Exception as e:
@@ -4146,7 +4156,7 @@ ADMIN_PASSWORD_HASH = None
 if ADMIN_PASSWORD:
     ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
 else:
-    print("⚠️  WARNING: ADMIN_PASSWORD not set - admin routes will be inaccessible")
+    logger.warning("⚠️  WARNING: ADMIN_PASSWORD not set - admin routes will be inaccessible")
 
 
 def check_admin_auth():
@@ -4376,7 +4386,7 @@ def audit_drops():
         except Exception as e:
             return {"brand": name, "url": url, "status": 0, "works": False, "reason": str(e)[:80]}
     
-    print(f"\n🔍 DROPS URL AUDIT: Testing {total} URLs...")
+    logger.info(f"\n🔍 DROPS URL AUDIT: Testing {total} URLs...")
     
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(test_url, item): item for item in all_urls.items()}
@@ -4384,13 +4394,13 @@ def audit_drops():
             result = future.result()
             if result["works"]:
                 results["working"].append(result)
-                print(f"  [{i}/{total}] ✅ {result['brand']}")
+                logger.info(f"  [{i}/{total}] ✅ {result['brand']}")
             elif result.get("suggested_url"):
                 results["broken"].append(result)
-                print(f"  [{i}/{total}] 🔄 {result['brand']}: try {result['suggested_url']}")
+                logger.info(f"  [{i}/{total}] 🔄 {result['brand']}: try {result['suggested_url']}")
             else:
                 results["broken"].append(result)
-                print(f"  [{i}/{total}] ❌ {result['brand']}: {result['reason'][:40]}")
+                logger.error(f"  [{i}/{total}] ❌ {result['brand']}: {result['reason'][:40]}")
     
     results["summary"] = {
         "total": total,
@@ -4398,7 +4408,7 @@ def audit_drops():
         "broken": len(results["broken"]),
     }
     
-    print(f"\n✅ Working: {len(results['working'])} | ❌ Broken: {len(results['broken'])}")
+    logger.error(f"\n✅ Working: {len(results['working'])} | ❌ Broken: {len(results['broken'])}")
     
     return jsonify(results)
     """Debug endpoint to see Impact catalog data"""
@@ -4468,12 +4478,12 @@ def start_background_jobs():
             return
         _scheduler_started = True
 
-    print("\n" + "="*60)
-    print("⛳ GOLF RADAR - Golf Promo Intelligence")
-    print(f"📡 Monitoring {len(BRANDS)} brands")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("⛳ GOLF RADAR - Golf Promo Intelligence")
+    logger.info(f"📡 Monitoring {len(BRANDS)} brands")
+    logger.info("="*60)
 
-    print("\n🔄 Starting initial scan...")
+    logger.info("\n🔄 Starting initial scan...")
     threading.Thread(target=run_scraper, daemon=True).start()
 
     scheduler = BackgroundScheduler()
@@ -4485,7 +4495,7 @@ def start_background_jobs():
         coalesce=True,
     )
     scheduler.start()
-    print(f"⏰ Auto-refresh every {REFRESH_INTERVAL_MINUTES} minutes")
+    logger.info(f"⏰ Auto-refresh every {REFRESH_INTERVAL_MINUTES} minutes")
 
 
 # Start jobs on import so gunicorn workers pick them up.
@@ -4496,5 +4506,5 @@ start_background_jobs()
 # MAIN (local dev only)
 # =============================================================================
 if __name__ == "__main__":
-    print(f"\n🌐 Server starting at http://localhost:{PORT}")
+    logger.info(f"\n🌐 Server starting at http://localhost:{PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=False)
