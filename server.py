@@ -3563,6 +3563,10 @@ def status():
 # CLICK TRACKING
 # =============================================================================
 CLICKS_FILE = os.path.join(DATA_DIR, "clicks.json")
+# Serialize the load-modify-write cycle across request threads. The old
+# implementation truncated the file with open("w") before grabbing the lock,
+# so concurrent clicks could lose data even though fcntl was being used.
+_clicks_lock = threading.Lock()
 
 
 def load_clicks():
@@ -3572,32 +3576,28 @@ def load_clicks():
 
 def save_click(brand, url, source="radar"):
     """Save a click event"""
-    data = load_clicks()
-    now = datetime.now()
-    date_key = now.strftime("%Y-%m-%d")
-    
-    # Add click record
-    data["clicks"].append({
-        "brand": brand,
-        "url": url,
-        "source": source,
-        "timestamp": now.isoformat()
-    })
-    
-    # Keep only last 10000 clicks
-    if len(data["clicks"]) > 10000:
-        data["clicks"] = data["clicks"][-10000:]
-    
-    # Update stats
-    data["stats"]["total"] += 1
-    data["stats"]["by_brand"][brand] = data["stats"]["by_brand"].get(brand, 0) + 1
-    data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
-    
-    with open(CLICKS_FILE, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        json.dump(data, f)
-    
-    return data["stats"]["total"]
+    with _clicks_lock:
+        data = load_clicks()
+        now = datetime.now()
+        date_key = now.strftime("%Y-%m-%d")
+
+        data["clicks"].append({
+            "brand": brand,
+            "url": url,
+            "source": source,
+            "timestamp": now.isoformat()
+        })
+
+        # Keep only last 10000 clicks
+        if len(data["clicks"]) > 10000:
+            data["clicks"] = data["clicks"][-10000:]
+
+        data["stats"]["total"] += 1
+        data["stats"]["by_brand"][brand] = data["stats"]["by_brand"].get(brand, 0) + 1
+        data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
+
+        atomic_write_json(CLICKS_FILE, data)
+        return data["stats"]["total"]
 
 
 def add_subid(url, source="radar"):
@@ -3612,38 +3612,40 @@ def add_subid(url, source="radar"):
 # SEARCH TRACKING
 # =============================================================================
 SEARCHES_FILE = os.path.join(DATA_DIR, "searches.json")
+_searches_lock = threading.Lock()
+
 
 def load_searches():
     return safe_read_json(SEARCHES_FILE, {"searches": [], "stats": {"total": 0, "by_query": {}, "by_date": {}}})
+
 
 def save_search(query):
     """Save a search event"""
     if not query or len(query) < 2:
         return
-    data = load_searches()
-    now = datetime.now()
-    date_key = now.strftime("%Y-%m-%d")
-    query_lower = query.lower().strip()
-    
-    data["searches"].append({
-        "query": query_lower,
-        "timestamp": now.isoformat()
-    })
-    
-    # Keep only last 5000 searches
-    if len(data["searches"]) > 5000:
-        data["searches"] = data["searches"][-5000:]
-    
-    data["stats"]["total"] = data["stats"].get("total", 0) + 1
-    data["stats"]["by_query"][query_lower] = data["stats"]["by_query"].get(query_lower, 0) + 1
-    data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
-    
-    try:
-        with open(SEARCHES_FILE, "w") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            json.dump(data, f)
-    except Exception:
-        pass
+    with _searches_lock:
+        data = load_searches()
+        now = datetime.now()
+        date_key = now.strftime("%Y-%m-%d")
+        query_lower = query.lower().strip()
+
+        data["searches"].append({
+            "query": query_lower,
+            "timestamp": now.isoformat()
+        })
+
+        # Keep only last 5000 searches
+        if len(data["searches"]) > 5000:
+            data["searches"] = data["searches"][-5000:]
+
+        data["stats"]["total"] = data["stats"].get("total", 0) + 1
+        data["stats"]["by_query"][query_lower] = data["stats"]["by_query"].get(query_lower, 0) + 1
+        data["stats"]["by_date"][date_key] = data["stats"]["by_date"].get(date_key, 0) + 1
+
+        try:
+            atomic_write_json(SEARCHES_FILE, data)
+        except Exception as e:
+            print(f"⚠️  Failed to write {SEARCHES_FILE}: {e}")
 
 @app.route('/api/track-search')
 def track_search():
