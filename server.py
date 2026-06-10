@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, urljoin
 from flask import Flask, jsonify, send_from_directory, request, session, Response
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from apscheduler.schedulers.background import BackgroundScheduler
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -3453,6 +3455,17 @@ if app.secret_key == "change-me-in-production-set-SECRET_KEY-env-var":
     print("⚠️  WARNING: Using default SECRET_KEY - set SECRET_KEY env var for persistent sessions")
 CORS(app)
 
+# Rate limiting (in-memory; single process). Per-route limits applied via
+# decorators on /api/scan, /api/track-search, /go; default protects everything
+# else. flask-limiter trusts the remote_addr from the WSGI server, which is
+# what we want behind Railway's edge.
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=["300 per minute"],
+    storage_uri="memory://",
+)
+
 
 @app.route('/')
 def index():
@@ -3648,6 +3661,7 @@ def save_search(query):
             print(f"⚠️  Failed to write {SEARCHES_FILE}: {e}")
 
 @app.route('/api/track-search')
+@limiter.limit("30 per minute")
 def track_search():
     """Track a search query"""
     query = request.args.get('q', '').strip()
@@ -3676,6 +3690,7 @@ def get_searches():
 
 
 @app.route('/go')
+@limiter.limit("60 per minute")
 def track_click():
     """Track click and redirect to affiliate URL with subId"""
     from urllib.parse import urlparse
@@ -3912,28 +3927,46 @@ def embed_demo():
 
 
 
+def is_safe_target(hostname):
+    """Resolve hostname and reject if any A/AAAA record is private/loopback/etc.
+    NOTE: redirect targets are not re-validated here; acceptable risk for now
+    given Railway has no cloud-metadata endpoint of consequence."""
+    import ipaddress
+    import socket
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 @app.route('/api/scan')
+@limiter.limit("10 per minute")
 def scan_url():
     """On-demand scan of a user-provided URL"""
     import time as _time
-    
+
     url = request.args.get('url', '').strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
-    
+
     # Add https if missing
     if not url.startswith('http'):
         url = 'https://' + url
-    
-    # Basic URL validation
+
+    # URL validation
     try:
         from urllib.parse import urlparse
         parsed = urlparse(url)
         if not parsed.netloc or '.' not in parsed.netloc:
             return jsonify({"error": "Invalid URL"}), 400
-        # Block internal/private IPs
         hostname = parsed.netloc.split(':')[0]
-        if hostname in ['localhost', '127.0.0.1', '0.0.0.0'] or hostname.startswith('192.168.') or hostname.startswith('10.'):
+        if not is_safe_target(hostname):
             return jsonify({"error": "Invalid URL"}), 400
     except Exception:
         return jsonify({"error": "Invalid URL"}), 400
