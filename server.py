@@ -402,10 +402,22 @@ except ImportError:
 # CONFIG
 # =============================================================================
 REFRESH_INTERVAL_MINUTES = 20
-DATA_FILE = "promo_data.json"
-DEAL_HISTORY_FILE = "deal_history.json"
-DROPS_HISTORY_FILE = "drops_history.json"
+
+# Runtime JSON state lives under DATA_DIR so it can be pointed at a Railway
+# Volume (or any persistent mount). Defaults to the repo dir for local dev.
+# priority_intel.json and tactical_nukes.json deliberately stay in the repo
+# dir since they are editor-curated and deploy with code.
+DATA_DIR = os.environ.get("DATA_DIR", BASE_DIR)
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DATA_FILE = os.path.join(DATA_DIR, "promo_data.json")
+DEAL_HISTORY_FILE = os.path.join(DATA_DIR, "deal_history.json")
+DROPS_HISTORY_FILE = os.path.join(DATA_DIR, "drops_history.json")
 PORT = int(os.environ.get("PORT", 5000))
+
+print(f"📂 DATA_DIR = {DATA_DIR}")
+for _f in (DATA_FILE, DEAL_HISTORY_FILE, DROPS_HISTORY_FILE):
+    print(f"   {'✅' if os.path.exists(_f) else '⬜'} {os.path.basename(_f)}")
 
 
 # Freshness settings
@@ -1127,7 +1139,7 @@ def build_new_arrivals_urls():
 
 # Cache for discovered new arrivals URLs
 _discovered_drops_urls = {}
-_drops_urls_cache_file = os.path.join(os.path.dirname(__file__), 'drops_url_cache.json')
+_drops_urls_cache_file = os.path.join(DATA_DIR, 'drops_url_cache.json')
 
 def load_drops_url_cache():
     """Load previously discovered drops URLs"""
@@ -3550,7 +3562,7 @@ def status():
 # =============================================================================
 # CLICK TRACKING
 # =============================================================================
-CLICKS_FILE = "clicks.json"
+CLICKS_FILE = os.path.join(DATA_DIR, "clicks.json")
 
 
 def load_clicks():
@@ -3599,7 +3611,7 @@ def add_subid(url, source="radar"):
 # =============================================================================
 # SEARCH TRACKING
 # =============================================================================
-SEARCHES_FILE = "searches.json"
+SEARCHES_FILE = os.path.join(DATA_DIR, "searches.json")
 
 def load_searches():
     return safe_read_json(SEARCHES_FILE, {"searches": [], "stats": {"total": 0, "by_query": {}, "by_date": {}}})
