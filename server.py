@@ -3746,6 +3746,8 @@ def track_click():
 @app.route('/api/clicks')
 def get_clicks():
     """Get click statistics"""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
     data = load_clicks()
     
     # Calculate additional stats
