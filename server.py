@@ -2754,6 +2754,389 @@ def scrape_brand(brand):
 
 
 
+# =============================================================================
+# SHOPIFY INTEGRATION (Phase 1)
+# =============================================================================
+# Many of the 170+ brands run Shopify, which exposes public JSON endpoints:
+#   /products.json?limit=N                       -> newest products
+#   /collections/<handle>/products.json?limit=N  -> curated collection (e.g. sale)
+# Using these is dramatically more reliable than scraping HTML and gives real
+# fields (price, compare_at_price, sizes_in_stock) we can build trust and
+# price-history features on top of.
+
+PLATFORM_CACHE_FILE = os.path.join(DATA_DIR, "platform_cache.json")
+PLATFORM_CACHE_TTL_DAYS = 30
+SHOPIFY_SALE_HANDLES = ["sale", "clearance", "outlet", "last-chance", "markdowns", "final-sale"]
+
+_platform_cache_lock = threading.Lock()
+_platform_cache = None  # lazy-loaded on first use
+
+
+def _get_domain(brand_url):
+    """Normalize brand URL to its host (no scheme, no port, no leading www)."""
+    try:
+        host = urlparse(brand_url).netloc.lower()
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return None
+
+
+def _load_platform_cache():
+    global _platform_cache
+    if _platform_cache is None:
+        _platform_cache = safe_read_json(PLATFORM_CACHE_FILE, {})
+    return _platform_cache
+
+
+def _save_platform_cache():
+    if _platform_cache is not None:
+        try:
+            atomic_write_json(PLATFORM_CACHE_FILE, _platform_cache)
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to write platform cache: {e}")
+
+
+def detect_platform(brand):
+    """Return 'shopify' or 'other'. Probes /products.json?limit=1 and caches
+    DEFINITIVE results (200 with valid body, or 404) for PLATFORM_CACHE_TTL_DAYS.
+    Indeterminate failures (429, timeouts, network errors) are not cached so
+    a transient rate-limit doesn't lock a brand out for 30 days. Lazy + cached
+    so it adds at most one extra request per brand per month for the steady
+    state."""
+    domain = _get_domain(brand["url"])
+    if not domain:
+        return "other"
+
+    with _platform_cache_lock:
+        entry = _load_platform_cache().get(domain)
+        if entry:
+            try:
+                checked = datetime.fromisoformat(entry["checked"])
+                if (datetime.now() - checked).days < PLATFORM_CACHE_TTL_DAYS:
+                    return entry.get("platform", "other")
+            except (KeyError, ValueError):
+                pass
+
+    parsed = urlparse(brand["url"])
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    platform = None  # None = indeterminate; do not cache
+    try:
+        resp = requests.get(
+            f"{base}/products.json?limit=1",
+            headers=get_headers(),
+            timeout=5,
+            allow_redirects=True,
+        )
+        if resp.status_code == 200:
+            try:
+                data = resp.json()
+                if isinstance(data, dict) and "products" in data:
+                    platform = "shopify"
+                else:
+                    platform = "other"  # 200 OK but not Shopify shape
+            except ValueError:
+                platform = "other"  # 200 OK but not JSON
+        elif resp.status_code == 404:
+            platform = "other"  # endpoint doesn't exist -> definitively not Shopify
+        # 429, 5xx, 403, etc. -> leave platform=None so we retry next cycle
+    except requests.RequestException:
+        pass
+
+    if platform is None:
+        return "other"  # fall back this cycle without poisoning the cache
+
+    with _platform_cache_lock:
+        cache = _load_platform_cache()
+        entry = cache.get(domain, {})
+        entry["platform"] = platform
+        entry["checked"] = datetime.now().isoformat()
+        cache[domain] = entry
+        _save_platform_cache()
+
+    return platform
+
+
+# --- Price history -----------------------------------------------------------
+
+PRICE_HISTORY_FILE = os.path.join(DATA_DIR, "price_history.json")
+PRICE_HISTORY_DEDUP_HOURS = 6
+PRICE_HISTORY_RETENTION_DAYS = 180
+
+_price_history_lock = threading.Lock()
+# Snapshots staged during a scrape cycle; merged into the file by
+# flush_price_history() at the end of run_scraper to avoid N atomic writes.
+_price_history_pending = {}
+
+
+def record_price_snapshot(domain, handle, price, compare_at, in_stock_sizes):
+    """Stage a price snapshot for the current scrape cycle. Safe to call from
+    worker threads; the on-disk write happens once in flush_price_history()."""
+    if not domain or not handle:
+        return
+    key = f"{domain}:{handle}"
+    snapshot = {
+        "ts": datetime.now().isoformat(),
+        "price": price,
+        "compare_at": compare_at,
+        "in_stock_sizes": list(in_stock_sizes) if in_stock_sizes else [],
+    }
+    with _price_history_lock:
+        _price_history_pending.setdefault(key, []).append(snapshot)
+
+
+def flush_price_history():
+    """Merge pending snapshots into PRICE_HISTORY_FILE, applying dedup
+    (one per product per PRICE_HISTORY_DEDUP_HOURS) and retention (drop
+    entries older than PRICE_HISTORY_RETENTION_DAYS)."""
+    global _price_history_pending
+    with _price_history_lock:
+        pending = _price_history_pending
+        _price_history_pending = {}
+
+    if not pending:
+        return
+
+    history = safe_read_json(PRICE_HISTORY_FILE, {})
+    cutoff = datetime.now() - timedelta(days=PRICE_HISTORY_RETENTION_DAYS)
+    dedup_window = timedelta(hours=PRICE_HISTORY_DEDUP_HOURS)
+
+    added = 0
+    for key, snaps in pending.items():
+        existing = history.get(key, [])
+        # Apply retention up front
+        kept = []
+        for s in existing:
+            try:
+                if datetime.fromisoformat(s["ts"]) > cutoff:
+                    kept.append(s)
+            except (KeyError, ValueError):
+                continue
+        existing = kept
+        newest_ts = None
+        if existing:
+            try:
+                newest_ts = max(datetime.fromisoformat(s["ts"]) for s in existing)
+            except ValueError:
+                newest_ts = None
+        snaps.sort(key=lambda s: s["ts"])
+        for snap in snaps:
+            try:
+                ts = datetime.fromisoformat(snap["ts"])
+            except ValueError:
+                continue
+            if newest_ts is None or ts - newest_ts >= dedup_window:
+                existing.append(snap)
+                newest_ts = ts
+                added += 1
+        history[key] = existing
+
+    try:
+        atomic_write_json(PRICE_HISTORY_FILE, history)
+        logger.info(f"💾 Price history: +{added} new snapshots, {len(history)} products tracked")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to write price history: {e}")
+
+
+# --- Shopify sale (clearance) -----------------------------------------------
+
+def _shopify_compute_pct_off(variant):
+    """Return (price, compare_at, pct_off) or (None, None, None) if no real
+    markdown (compare_at missing or <= price)."""
+    try:
+        price = float(variant.get("price") or 0)
+        compare_at_raw = variant.get("compare_at_price")
+        if not compare_at_raw:
+            return None, None, None
+        compare_at = float(compare_at_raw)
+        if compare_at <= price or price <= 0:
+            return None, None, None
+        return price, compare_at, round((1 - price / compare_at) * 100)
+    except (TypeError, ValueError):
+        return None, None, None
+
+
+def scrape_shopify_sale(brand):
+    """Pull discounted products from a Shopify brand's sale collection.
+    Returns a list of clearance objects in the existing clearance shape with
+    Shopify-only fields added. Returns [] on any failure so the caller can
+    fall back to the HTML scraper."""
+    domain = _get_domain(brand["url"])
+    if not domain:
+        return []
+    parsed = urlparse(brand["url"])
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Re-try the cached winning handle first if we have one
+    with _platform_cache_lock:
+        cached_handle = _load_platform_cache().get(domain, {}).get("sale_handle")
+
+    handles = (
+        [cached_handle] + [h for h in SHOPIFY_SALE_HANDLES if h != cached_handle]
+        if cached_handle
+        else list(SHOPIFY_SALE_HANDLES)
+    )
+
+    products = None
+    winning_handle = None
+    for handle in handles:
+        try:
+            resp = requests.get(
+                f"{base}/collections/{handle}/products.json?limit=50",
+                headers=get_headers(),
+                timeout=8,
+                allow_redirects=True,
+            )
+            if resp.status_code != 200:
+                continue
+            candidate = (resp.json() or {}).get("products") or []
+            if candidate:
+                products = candidate
+                winning_handle = handle
+                break
+        except (requests.RequestException, ValueError):
+            continue
+
+    if not products:
+        return []
+
+    with _platform_cache_lock:
+        cache = _load_platform_cache()
+        entry = cache.get(domain, {})
+        entry["sale_handle"] = winning_handle
+        cache[domain] = entry
+        _save_platform_cache()
+
+    results = []
+    for product in products:
+        variants = product.get("variants") or []
+        if not variants:
+            continue
+
+        price = compare_at = pct_off = None
+        in_stock_sizes = []
+        for v in variants:
+            if v.get("available"):
+                title = v.get("title")
+                if title and title != "Default Title":
+                    in_stock_sizes.append(title)
+            if pct_off is None:
+                p, c, pct = _shopify_compute_pct_off(v)
+                if pct is not None:
+                    price, compare_at, pct_off = p, c, pct
+        if pct_off is None:
+            continue  # no real markdown on any variant
+
+        handle = product.get("handle") or ""
+        product_url = f"{base}/products/{handle}"
+        images = product.get("images") or []
+        image = images[0].get("src") if images else None
+
+        title = (product.get("title") or "")[:100]
+        promo_text = f"{title} - {pct_off}% off"
+
+        results.append({
+            # existing clearance shape
+            "brand": brand["name"],
+            "url": product_url,
+            "affiliate_url": brand.get("affiliate_url"),
+            "category": brand.get("category", "apparel"),
+            "promo": promo_text,
+            "discount": pct_off,
+            "type": "clearance",
+            # new fields
+            "pct_off": pct_off,
+            "price": price,
+            "compare_at_price": compare_at,
+            "product_url": product_url,
+            "image": image,
+            "sizes_in_stock": in_stock_sizes,
+            "source": "shopify",
+        })
+
+        record_price_snapshot(domain, handle, price, compare_at, in_stock_sizes)
+
+    return results
+
+
+# --- Shopify new drops ------------------------------------------------------
+
+def scrape_shopify_drops(brand_name, brand_url):
+    """Pull recently-published Shopify products as new drops. Output shape
+    mirrors scrape_new_arrivals_page so it slots into scrape_all_new_arrivals
+    without changes downstream, plus an added published_at field."""
+    domain = _get_domain(brand_url)
+    if not domain:
+        return []
+    parsed = urlparse(brand_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    try:
+        resp = requests.get(
+            f"{base}/products.json?limit=20",
+            headers=get_headers(),
+            timeout=8,
+            allow_redirects=True,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json() or {}
+    except (requests.RequestException, ValueError):
+        return []
+
+    products = data.get("products") or []
+    cutoff = datetime.now() - timedelta(days=14)
+    results = []
+    for product in products:
+        published_raw = product.get("published_at")
+        if not published_raw:
+            continue
+        try:
+            published = datetime.fromisoformat(published_raw.replace("Z", "+00:00"))
+            published_naive = published.replace(tzinfo=None)
+        except (TypeError, ValueError):
+            continue
+        if published_naive < cutoff:
+            continue
+
+        handle = product.get("handle") or ""
+        product_url = f"{base}/products/{handle}"
+        images = product.get("images") or []
+        image = images[0].get("src") if images else None
+
+        variants = product.get("variants") or []
+        price = compare_at = None
+        in_stock_sizes = []
+        if variants:
+            try:
+                price = float(variants[0].get("price") or 0) or None
+            except (TypeError, ValueError):
+                price = None
+            try:
+                ca_raw = variants[0].get("compare_at_price")
+                compare_at = float(ca_raw) if ca_raw else None
+            except (TypeError, ValueError):
+                compare_at = None
+            for v in variants:
+                if v.get("available"):
+                    title = v.get("title")
+                    if title and title != "Default Title":
+                        in_stock_sizes.append(title)
+
+        results.append({
+            "name": (product.get("title") or "")[:100],
+            "url": product_url,
+            "image": image,
+            "price": f"${price:.0f}" if price else None,
+            "brand": brand_name,
+            "published_at": published_raw,
+        })
+
+        record_price_snapshot(domain, handle, price, compare_at, in_stock_sizes)
+
+    results.sort(key=lambda r: r["published_at"], reverse=True)
+    return results
+
+
 def run_scraper():
     """Run full scrape of all brands"""
     try:
@@ -2842,7 +3225,14 @@ def run_scraper():
                 logger.error(f"❌ CRITICAL: save_data failed: {e}")
                 import traceback
                 traceback.print_exc()
-        
+
+        # Flush staged price snapshots from this cycle to price_history.json.
+        # Safe even if scrape failed partway; dedup keeps us from doubling up.
+        try:
+            flush_price_history()
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to flush price history: {e}")
+
         return results
     
     except Exception as e:
@@ -3067,38 +3457,51 @@ def scrape_sale_page(brand, sale_url):
 
 
 def scan_sale_pages(brands):
-    """Scan sale pages for all brands (concurrent)"""
+    """Scan sale pages for all brands (concurrent).
+    Routes Shopify brands through scrape_shopify_sale for structured data
+    (price, compare_at_price, sizes_in_stock); falls back to the HTML
+    scraper on any failure or for non-Shopify brands."""
     clearance = []
-    
+
     # Skip these for sale page scanning - too noisy or structured differently
     skip_domains = ['amazon.com', 'golf.com/gear', 'dickssportinggoods.com', 'pgatoursuperstore.com', 'golfgalaxy.com']
-    
+
     eligible_brands = [b for b in brands if not any(domain in b["url"] for domain in skip_domains)]
-    
+
     def scan_brand_sales(brand):
-        """Scan sale pages for a single brand"""
+        """Scan sale pages for a single brand. Always returns a list."""
+        if detect_platform(brand) == "shopify":
+            shopify_items = scrape_shopify_sale(brand)
+            if shopify_items:
+                return shopify_items
+            # fall through to HTML on empty result
+
         sale_urls = get_sale_urls(brand["url"])
         sitemap_urls = mine_sitemap_for_sale_urls(brand["url"], max_urls=3)
         all_sale_urls = list(set(sale_urls + sitemap_urls))
-        
+
         for sale_url in all_sale_urls[:5]:
             result = scrape_sale_page(brand, sale_url)
             if result:
-                return result
-        return None
-    
+                return [result]
+        return []
+
     with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_brand = {executor.submit(scan_brand_sales, brand): brand for brand in eligible_brands}
         for future in as_completed(future_to_brand):
             brand = future_to_brand[future]
             try:
-                result = future.result()
-                if result:
-                    logger.info(f"  🏷️  {brand['name']}: {result['promo'][:50]}")
-                    clearance.append(result)
+                items = future.result()
+                if not items:
+                    continue
+                if items[0].get("source") == "shopify":
+                    logger.info(f"  🛍️  {brand['name']}: {len(items)} Shopify items")
+                else:
+                    logger.info(f"  🏷️  {brand['name']}: {items[0]['promo'][:50]}")
+                clearance.extend(items)
             except Exception as e:
                 logger.warning(f"  ⚠️  {brand['name']} sale scan error: {e}")
-    
+
     return clearance
 
 
@@ -3297,14 +3700,24 @@ def scrape_new_arrivals_page(brand_name, new_arrivals_url):
 
 
 def scrape_all_new_arrivals():
-    """Scrape new arrivals from all brands (concurrent)"""
+    """Scrape new arrivals from all brands (concurrent).
+    Shopify brands are pulled via the structured /products.json feed
+    (sorted by published_at, last 14 days). Falls back to the HTML
+    scraper on any failure or for non-Shopify brands."""
     all_urls = build_new_arrivals_urls()
     logger.info(f"\n🆕 Scanning {len(all_urls)} brands for new drops...")
-    
+
     all_new_drops = []
-    
+    brand_by_name = {b["name"]: b for b in BRANDS}
+
     def scrape_brand_arrivals(item):
         brand_name, url = item
+        brand_dict = brand_by_name.get(brand_name)
+        if brand_dict and detect_platform(brand_dict) == "shopify":
+            shopify_drops = scrape_shopify_drops(brand_name, brand_dict["url"])
+            if shopify_drops:
+                return brand_name, shopify_drops
+            # fall through to HTML on empty result
         return brand_name, scrape_new_arrivals_page(brand_name, url)
     
     with ThreadPoolExecutor(max_workers=5) as executor:
