@@ -883,11 +883,16 @@
                 const bShipOnly = isFreeShipOnly(b);
                 if (aShipOnly && !bShipOnly) return 1;
                 if (!aShipOnly && bShipOnly) return -1;
-                
+
+                // Always-on deals below fresh deals (editorial honesty: a
+                // standing discount shouldn't rank above a real new sale).
+                if (a.always_on && !b.always_on) return 1;
+                if (!a.always_on && b.always_on) return -1;
+
                 // New deals first
                 if (a.is_new && !b.is_new) return -1;
                 if (!a.is_new && b.is_new) return 1;
-                
+
                 // Then by discount
                 const getDiscount = (p) => {
                     const match = p.promo?.match(/(\d+)%/);
@@ -1022,14 +1027,14 @@
                 const linkUrl = trackUrl(rawUrl, p.brand, 'promos');
                 const initials = p.brand.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                 
-                // Badge logic: NEW > HOT > ALWAYS ON
+                // Badge logic: NEW > HOT > ALWAYS AVAILABLE (muted, editorial)
                 let badge = '';
                 if (isNew) {
                     badge = '<span class="text-radar-green text-xs border border-radar-green px-1 animate-pulse">NEW</span>';
-                } else if (isHot) {
+                } else if (isHot && !p.always_on) {
                     badge = '<span class="text-radar-green text-xs border border-radar-green px-1">HOT</span>';
-                } else if (isStale) {
-                    badge = '<span class="text-gray-500 text-xs border border-gray-600 px-1">ONGOING</span>';
+                } else if (p.always_on) {
+                    badge = alwaysOnBadge(p);
                 }
                 
                 // Expiration indicator
@@ -1077,8 +1082,9 @@
                                     View <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
                             </div>
+                            <div class="mt-2 relative z-10">${verifiedPill(p)}</div>
                         </div>
-                        
+
                         <!-- Hover overlay removed for cleaner look -->
                     </a>
                 `;
@@ -1112,11 +1118,24 @@
                 return;
             }
 
+            // Push always-available codes below fresh ones, same editorial
+            // honesty as the deals sort: a standing code shouldn't rank above
+            // a real new one.
+            codes.sort((a, b) => {
+                if (a.always_on && !b.always_on) return 1;
+                if (!a.always_on && b.always_on) return -1;
+                if (a.is_new && !b.is_new) return -1;
+                if (!a.is_new && b.is_new) return 1;
+                return 0;
+            });
+
             grid.innerHTML = codes.map(c => {
                 const rawUrl = c.affiliate_url || c.url || '#';
                 const linkUrl = trackUrl(rawUrl, c.brand, 'codes');
                 const isNew = c.is_new;
                 const firstSeenText = c.first_seen ? formatFirstSeen(c.first_seen) : '';
+                const testedBadge = codeVerificationBadge(c);
+                const alwaysBadge = alwaysOnBadge(c);
                 return `
                 <div class="deal-card bg-radar-dark border border-radar-grid p-5 relative group hover:border-radar-green transition-colors duration-300 ${isNew ? 'border-radar-green' : ''}">
                     ${isNew ? '<div class="absolute top-0 right-0 bg-radar-green text-black text-[10px] font-bold px-2 py-1 animate-pulse">NEW</div>' : ''}
@@ -1128,6 +1147,11 @@
                         <div class="code-copy bg-radar-green/20 border border-radar-green px-4 py-2 text-radar-green font-tech text-lg cursor-pointer" onclick="event.stopPropagation(); copyCode('${c.code}', this)">
                             ${c.code}
                         </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-800">
+                        ${testedBadge}
+                        ${alwaysBadge}
+                        ${verifiedPill(c)}
                     </div>
                 </div>
             `}).join('');
@@ -1155,8 +1179,10 @@
                 );
             }
             
-            // Sort: NEW first, then by discount percentage (highest first)
+            // Sort: always-on below fresh, then NEW first, then by discount
             items.sort((a, b) => {
+                if (a.always_on && !b.always_on) return 1;
+                if (!a.always_on && b.always_on) return -1;
                 if (a.is_new && !b.is_new) return -1;
                 if (!a.is_new && b.is_new) return 1;
                 return (b.discount || 0) - (a.discount || 0);
@@ -1216,6 +1242,10 @@
                                 <span class="text-white group-hover:text-radar-green font-loud text-lg uppercase tracking-wide flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                                     Shop <i class="fas fa-chevron-right text-xs"></i>
                                 </span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap items-center gap-2 relative z-10">
+                                ${alwaysOnBadge(c)}
+                                ${verifiedPill(c)}
                             </div>
                         </div>
                     </a>
@@ -1620,6 +1650,45 @@
             }
         });
         
+        // =================================================================
+        // PHASE 2 TRUST SIGNALS
+        // =================================================================
+        // A small "● Verified 2h ago" pill the user can rely on. Green dot if
+        // we re-confirmed the deal within the last 6h, gray otherwise.
+        function verifiedPill(item) {
+            const ts = item.verified_at || item.last_seen;
+            if (!ts) return '';
+            try {
+                const ageHours = (new Date() - new Date(ts)) / 36e5;
+                const fresh = ageHours < 6;
+                const dotColor = fresh ? 'text-radar-green' : 'text-gray-500';
+                return `<span class="text-[10px] text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    <span class="${dotColor}">●</span> Verified ${formatFirstSeen(ts)}
+                </span>`;
+            } catch (e) {
+                return '';
+            }
+        }
+
+        // "Always available" honesty badge: deals running > DEAL_STALE_DAYS
+        // server-side. Muted styling so it doesn't get hyped up next to fresh
+        // deals; tooltip says it's a standing discount, not a sale.
+        function alwaysOnBadge(item) {
+            if (!item.always_on) return '';
+            const days = item.days_running || 7;
+            const tip = `This offer has run for ${days} days. It's a standing discount, not a sale.`;
+            return `<span class="text-gray-500 text-[10px] border border-gray-700 px-1.5 py-0.5 uppercase tracking-wider" title="${tip}">Always available</span>`;
+        }
+
+        // "Tested today" badge for codes our /discount probe just confirmed.
+        // Server emits verification: "tested" | "site-confirmed" | "unverified".
+        function codeVerificationBadge(code) {
+            if (code.verification === 'tested') {
+                return `<span class="text-radar-green text-[10px] border border-radar-green px-1.5 py-0.5 uppercase tracking-wider" title="Confirmed live on the storefront this scrape cycle">✓ Tested today</span>`;
+            }
+            return '';
+        }
+
         function formatFirstSeen(dateStr) {
             if (!dateStr) return '';
             try {

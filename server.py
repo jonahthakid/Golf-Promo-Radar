@@ -632,6 +632,11 @@ def update_deal_history(deals, history):
         deal_with_meta["is_stale"] = deal_age_days > DEAL_STALE_DAYS
         deal_with_meta["is_expired"] = is_expired
         deal_with_meta["expires"] = expires
+        # Phase 2 trust signals (additive — frontend reads these to render
+        # "Verified Xh ago" timestamps and "Always available" badges).
+        deal_with_meta["verified_at"] = history[key]["last_seen"]
+        deal_with_meta["always_on"] = deal_age_days > DEAL_STALE_DAYS
+        deal_with_meta["days_running"] = int(deal_age_days)
         
         # Only include if not expired
         if not is_expired:
@@ -729,6 +734,7 @@ def update_drops_history(drops, history):
         enriched_drop["times_seen"] = history[key]["times_seen"]
         enriched_drop["is_new"] = drop_age_hours < DROPS_NEW_HOURS
         enriched_drop["drop_age_hours"] = round(drop_age_hours, 1)
+        enriched_drop["verified_at"] = history[key]["last_seen"]
         enriched.append(enriched_drop)
 
 
@@ -3740,6 +3746,106 @@ def scrape_all_new_arrivals():
     return all_new_drops
 
 
+# =============================================================================
+# CODE VERIFICATION (Phase 2.3)
+# =============================================================================
+# Annotate each code with a `verification` level the frontend can render as
+# a trust badge. Three levels:
+#   "tested"         actively confirmed against the storefront this cycle
+#                    (gated behind CODE_VERIFICATION_ENABLED; default off)
+#   "site-confirmed" Shopify brand whose code we re-saw on-site within 24h
+#                    (no extra request — confidence comes from our scrape)
+#   "unverified"     in history but not recently reconfirmed, or brand isn't
+#                    on a platform we can probe.
+
+CODE_VERIFICATION_ENABLED = os.environ.get("CODE_VERIFICATION_ENABLED", "false").lower() == "true"
+CODE_VERIFICATION_MAX_PER_CYCLE = 30
+CODE_VERIFICATION_SPACING_SEC = 1.0
+
+
+def _is_shopify_brand_for_url(url):
+    """Cheap Shopify check using the platform cache. Does not probe."""
+    domain = _get_domain(url)
+    if not domain:
+        return False
+    with _platform_cache_lock:
+        entry = _load_platform_cache().get(domain, {})
+    return entry.get("platform") == "shopify"
+
+
+def verify_shopify_code(domain, code):
+    """Hit the Shopify storefront's /discount/{CODE} endpoint and inspect
+    the resulting cart for the applied discount. Returns True only on a
+    clear positive signal; False otherwise. Best-effort; failure is silent
+    so the heuristic path can take over."""
+    base = f"https://{domain}"
+    try:
+        sess = requests.Session()
+        sess.headers.update(get_headers())
+        sess.get(
+            f"{base}/discount/{code}",
+            params={"redirect": "/cart.js"},
+            timeout=6,
+            allow_redirects=True,
+        )
+        cart_resp = sess.get(f"{base}/cart.js", timeout=5)
+        cart = cart_resp.json() if cart_resp.status_code == 200 else {}
+    except (requests.RequestException, ValueError):
+        return False
+    code_upper = str(code).upper()
+    for d in (cart.get("discount_codes") or []):
+        if d.get("applicable") and str(d.get("code", "")).upper() == code_upper:
+            return True
+    for d in (cart.get("cart_level_discount_applications") or []):
+        if str(d.get("title", "")).upper() == code_upper:
+            return True
+    return False
+
+
+def apply_code_verification(codes):
+    """Mutate each code dict with `verification` and `verified_at`. Always
+    runs the heuristic; runs the active probe only when the env flag is on.
+    Returns the same list for fluent use."""
+    now = datetime.now()
+    twenty_four_hours = timedelta(hours=24)
+
+    # Phase 1 — active probes (kill-switched, default off)
+    if CODE_VERIFICATION_ENABLED:
+        candidates = [
+            c for c in codes
+            if c.get("code") and _is_shopify_brand_for_url(c.get("url") or "")
+        ][:CODE_VERIFICATION_MAX_PER_CYCLE]
+        tested = 0
+        for code_obj in candidates:
+            domain = _get_domain(code_obj.get("url") or "")
+            if domain and verify_shopify_code(domain, code_obj["code"]):
+                code_obj["verification"] = "tested"
+                code_obj["verified_at"] = now.isoformat()
+                tested += 1
+            time.sleep(CODE_VERIFICATION_SPACING_SEC)
+        if candidates:
+            logger.info(f"🔍 Code verification: probed {len(candidates)} Shopify codes, {tested} tested")
+
+    # Phase 2 — heuristic for anything not already "tested"
+    for code_obj in codes:
+        if code_obj.get("verification") == "tested":
+            continue
+        last_seen_iso = code_obj.get("last_seen") or code_obj.get("verified_at")
+        recently_seen = False
+        if last_seen_iso:
+            try:
+                last_seen = datetime.fromisoformat(last_seen_iso)
+                recently_seen = (now - last_seen) <= twenty_four_hours
+            except ValueError:
+                pass
+        if recently_seen and _is_shopify_brand_for_url(code_obj.get("url") or ""):
+            code_obj["verification"] = "site-confirmed"
+        else:
+            code_obj["verification"] = "unverified"
+        if last_seen_iso and not code_obj.get("verified_at"):
+            code_obj["verified_at"] = last_seen_iso
+
+    return codes
 
 
 def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
@@ -3787,19 +3893,24 @@ def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
         "lastUpdated": datetime.now().isoformat(),
         "criticalHitIndex": critical_hit_index,
         "promos": fresh_promos,
-        "codes": [
+        "codes": apply_code_verification([
             {
-                "brand": p["brand"], 
-                "code": p["code"], 
-                "discount": p["promo"][:60], 
-                "url": p.get("url"), 
+                "brand": p["brand"],
+                "code": p["code"],
+                "discount": p["promo"][:60],
+                "url": p.get("url"),
                 "affiliate_url": p.get("affiliate_url"),
                 "is_new": p.get("is_new", False),
                 "first_seen": p.get("first_seen"),
-                "expires": p.get("expires")
+                "last_seen": p.get("last_seen"),
+                "expires": p.get("expires"),
+                # Phase 2 trust signals
+                "verified_at": p.get("verified_at"),
+                "always_on": p.get("always_on", False),
+                "days_running": p.get("days_running"),
             }
             for p in fresh_promos if p.get("code")
-        ],
+        ]),
         "emailOffers": [
             {
                 "brand": p["brand"], 
