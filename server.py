@@ -3239,6 +3239,15 @@ def run_scraper():
         except Exception as e:
             logger.warning(f"⚠️  Failed to flush price history: {e}")
 
+        # Fire Klaviyo alert events for fresh deals and nukes (Phase 3).
+        # Reads the just-saved promo_data.json so we use the post-enrichment
+        # versions of fresh_promos / fresh_clearance with is_new + pct_off.
+        try:
+            latest = load_data()
+            fire_alert_events(latest.get("promos") or [], latest.get("clearance") or [])
+        except Exception as e:
+            logger.warning(f"⚠️  Failed to fire alert events: {e}")
+
         return results
     
     except Exception as e:
@@ -3848,6 +3857,301 @@ def apply_code_verification(codes):
     return codes
 
 
+# =============================================================================
+# KLAVIYO INTEGRATION (Phase 3)
+# =============================================================================
+# Email alerts: brand watchlists + tactical nuke broadcasts. The server's job
+# is profile upsert, list subscription, and firing events. Flows (the actual
+# "if event X for subscriber Y then email Z" logic) live in Klaviyo's UI on
+# top of the events fired here.
+#
+# All Klaviyo calls degrade gracefully when KLAVIYO_PRIVATE_KEY is unset:
+# they log a warning and return False without raising, so the rest of the
+# scrape pipeline keeps working even if alerts aren't configured yet.
+
+KLAVIYO_PRIVATE_KEY = os.environ.get("KLAVIYO_PRIVATE_KEY", "")
+KLAVIYO_WATCHLIST_LIST_ID = os.environ.get("KLAVIYO_WATCHLIST_LIST_ID", "")
+KLAVIYO_NUKE_LIST_ID = os.environ.get("KLAVIYO_NUKE_LIST_ID", "")
+KLAVIYO_SYSTEM_EMAIL = os.environ.get("KLAVIYO_SYSTEM_EMAIL", "system@radar.golf")
+KLAVIYO_API_BASE = "https://a.klaviyo.com/api"
+KLAVIYO_API_REVISION = "2024-10-15"
+
+NUKE_MIN_PCT_OFF = int(os.environ.get("NUKE_MIN_PCT_OFF", "40"))
+NUKE_BRAND_TAGS = {"major", "premium"}
+NUKE_MAX_PER_24H = int(os.environ.get("NUKE_MAX_PER_24H", "3"))
+NUKES_FIRED_FILE = os.path.join(DATA_DIR, "nukes_fired.json")
+_nukes_fired_lock = threading.Lock()
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _is_valid_email(email):
+    if not email or not isinstance(email, str):
+        return False
+    email = email.strip()
+    if len(email) > 254 or "\n" in email or "\r" in email:
+        return False
+    return bool(_EMAIL_RE.match(email))
+
+
+def _klaviyo_enabled():
+    return bool(KLAVIYO_PRIVATE_KEY)
+
+
+def _klaviyo_headers():
+    return {
+        "Authorization": f"Klaviyo-API-Key {KLAVIYO_PRIVATE_KEY}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "revision": KLAVIYO_API_REVISION,
+    }
+
+
+def klaviyo_get_profile_properties(email):
+    """Return existing custom-properties dict for the profile keyed by email,
+    or {} if no profile exists / the call fails."""
+    if not _klaviyo_enabled():
+        return {}
+    try:
+        resp = requests.get(
+            f"{KLAVIYO_API_BASE}/profiles/",
+            headers=_klaviyo_headers(),
+            params={
+                "filter": f'equals(email,"{email}")',
+                "fields[profile]": "properties",
+            },
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return {}
+        rows = (resp.json() or {}).get("data") or []
+        if not rows:
+            return {}
+        return rows[0].get("attributes", {}).get("properties") or {}
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"⚠️  Klaviyo profile lookup error: {e}")
+        return {}
+
+
+def klaviyo_upsert_profile_properties(email, properties):
+    """Upsert profile properties via the profile-import-jobs endpoint, which
+    creates the profile if it doesn't exist and merges properties otherwise."""
+    if not _klaviyo_enabled():
+        return False
+    body = {
+        "data": {
+            "type": "profile-bulk-import-job",
+            "attributes": {
+                "profiles": {
+                    "data": [{
+                        "type": "profile",
+                        "attributes": {
+                            "email": email,
+                            "properties": properties,
+                        },
+                    }]
+                },
+            },
+        }
+    }
+    try:
+        resp = requests.post(
+            f"{KLAVIYO_API_BASE}/profile-bulk-import-jobs/",
+            headers=_klaviyo_headers(),
+            json=body,
+            timeout=10,
+        )
+        if resp.status_code in (200, 201, 202):
+            return True
+        logger.warning(f"⚠️  Klaviyo profile upsert failed: {resp.status_code} {resp.text[:200]}")
+        return False
+    except requests.RequestException as e:
+        logger.warning(f"⚠️  Klaviyo profile upsert error: {e}")
+        return False
+
+
+def klaviyo_subscribe(email, list_id):
+    """Subscribe email to a Klaviyo list (consents to marketing). Upserts the
+    profile if needed."""
+    if not _klaviyo_enabled():
+        return False
+    if not list_id:
+        logger.warning("⚠️  Klaviyo list_id missing — skip subscribe")
+        return False
+    body = {
+        "data": {
+            "type": "profile-subscription-bulk-create-job",
+            "attributes": {
+                "profiles": {
+                    "data": [{
+                        "type": "profile",
+                        "attributes": {
+                            "email": email,
+                            "subscriptions": {
+                                "email": {"marketing": {"consent": "SUBSCRIBED"}}
+                            },
+                        },
+                    }]
+                },
+            },
+            "relationships": {"list": {"data": {"type": "list", "id": list_id}}},
+        }
+    }
+    try:
+        resp = requests.post(
+            f"{KLAVIYO_API_BASE}/profile-subscription-bulk-create-jobs/",
+            headers=_klaviyo_headers(),
+            json=body,
+            timeout=10,
+        )
+        if resp.status_code in (200, 201, 202):
+            return True
+        logger.warning(f"⚠️  Klaviyo subscribe failed: {resp.status_code} {resp.text[:200]}")
+        return False
+    except requests.RequestException as e:
+        logger.warning(f"⚠️  Klaviyo subscribe error: {e}")
+        return False
+
+
+def klaviyo_track_event(event_name, email, properties=None):
+    """Fire a Klaviyo event. Flows in the Klaviyo UI filter on the event's
+    properties + the profile's stored watched_brands to route alerts."""
+    if not _klaviyo_enabled():
+        return False
+    body = {
+        "data": {
+            "type": "event",
+            "attributes": {
+                "properties": properties or {},
+                "metric": {"data": {"type": "metric", "attributes": {"name": event_name}}},
+                "profile": {"data": {"type": "profile", "attributes": {"email": email}}},
+            },
+        }
+    }
+    try:
+        resp = requests.post(
+            f"{KLAVIYO_API_BASE}/events/",
+            headers=_klaviyo_headers(),
+            json=body,
+            timeout=10,
+        )
+        if resp.status_code in (200, 201, 202):
+            return True
+        logger.warning(f"⚠️  Klaviyo event {event_name} failed: {resp.status_code} {resp.text[:200]}")
+        return False
+    except requests.RequestException as e:
+        logger.warning(f"⚠️  Klaviyo event {event_name} error: {e}")
+        return False
+
+
+# --- Nuke detection / firing -----------------------------------------------
+
+def _deal_in_tactical_nukes(deal):
+    """Editorial override: anything listed in tactical_nukes.json is a nuke."""
+    try:
+        path = os.path.join(os.path.dirname(__file__), 'tactical_nukes.json')
+        if not os.path.exists(path):
+            return False
+        with open(path) as f:
+            nukes = json.load(f) or []
+        deal_brand = deal.get("brand", "")
+        deal_promo = (deal.get("promo") or "").lower()
+        for n in nukes:
+            if n.get("brand") != deal_brand:
+                continue
+            name_hit = (n.get("name") or "").lower() in deal_promo
+            if name_hit or not n.get("name"):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _is_nuke_deal(deal):
+    """A 'tactical nuke' is a deal worth blasting subscribers about:
+       - pct_off >= NUKE_MIN_PCT_OFF AND brand tagged 'major' or 'premium', OR
+       - the deal is in tactical_nukes.json (editorial override)."""
+    pct = deal.get("pct_off") or deal.get("discount") or 0
+    if pct >= NUKE_MIN_PCT_OFF:
+        brand_name = deal.get("brand")
+        brand = next((b for b in BRANDS if b["name"] == brand_name), None)
+        if brand and (set(brand.get("tags") or []) & NUKE_BRAND_TAGS):
+            return True
+    return _deal_in_tactical_nukes(deal)
+
+
+def _load_nukes_fired():
+    return safe_read_json(NUKES_FIRED_FILE, {})
+
+
+def _save_nukes_fired(d):
+    try:
+        atomic_write_json(NUKES_FIRED_FILE, d)
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to write {NUKES_FIRED_FILE}: {e}")
+
+
+def fire_alert_events(fresh_promos, fresh_clearance):
+    """Fire Klaviyo events for new deals and unfired nukes. Called at end of
+    run_scraper. No-ops if Klaviyo isn't configured."""
+    if not _klaviyo_enabled():
+        return
+
+    new_deals = [p for p in (fresh_promos or []) if p.get("is_new")]
+    new_deals += [c for c in (fresh_clearance or []) if c.get("is_new")]
+    if not new_deals:
+        return
+
+    # Brand Deal Posted — fires for every fresh deal. Klaviyo flow filters
+    # on event.brand contained-in profile.watched_brands to personalize.
+    sent = 0
+    for d in new_deals:
+        props = {
+            "brand": d.get("brand"),
+            "promo": d.get("promo"),
+            "code": d.get("code"),
+            "url": d.get("affiliate_url") or d.get("url"),
+            "pct_off": d.get("pct_off") or d.get("discount"),
+        }
+        if klaviyo_track_event("Brand Deal Posted", KLAVIYO_SYSTEM_EMAIL, props):
+            sent += 1
+    logger.info(f"📣 Brand Deal Posted: {sent}/{len(new_deals)} delivered to Klaviyo")
+
+    # Tactical Nuke — dedup per deal key, cap 3/24h. Scarcity is the product.
+    with _nukes_fired_lock:
+        fired = _load_nukes_fired()
+        cutoff_7d = (datetime.now() - timedelta(days=7)).isoformat()
+        fired = {k: v for k, v in fired.items() if v >= cutoff_7d}
+        cutoff_24h = (datetime.now() - timedelta(hours=24)).isoformat()
+        recent_count = sum(1 for v in fired.values() if v >= cutoff_24h)
+
+        nuked = suppressed = 0
+        for d in new_deals:
+            if not _is_nuke_deal(d):
+                continue
+            key = get_deal_key(d)
+            if key in fired:
+                continue  # already alerted on this exact deal
+            if recent_count >= NUKE_MAX_PER_24H:
+                suppressed += 1
+                continue
+            props = {
+                "brand": d.get("brand"),
+                "promo": d.get("promo"),
+                "code": d.get("code"),
+                "url": d.get("affiliate_url") or d.get("url"),
+                "pct_off": d.get("pct_off") or d.get("discount"),
+                "image": d.get("image"),
+            }
+            if klaviyo_track_event("Tactical Nuke", KLAVIYO_SYSTEM_EMAIL, props):
+                fired[key] = datetime.now().isoformat()
+                recent_count += 1
+                nuked += 1
+        _save_nukes_fired(fired)
+        if nuked or suppressed:
+            logger.info(f"💣 Tactical Nuke: {nuked} fired, {suppressed} suppressed (24h cap)")
+
+
 def save_data(promos, clearance=None, impact_deals=None, new_drops=None):
     """Save scraped data to file with freshness tracking"""
     active_promos = [p for p in promos if p.get("promo")]
@@ -4351,6 +4655,130 @@ def get_clicks():
     })
 
 
+
+
+# =============================================================================
+# ALERT ENDPOINTS (Phase 3)
+# =============================================================================
+
+@app.route('/api/watch', methods=['POST'])
+@limiter.limit("5 per minute")
+def api_watch():
+    """Brand watchlist signup. Validates email + brand names, merges with
+    any existing watched_brands on the Klaviyo profile, subscribes to the
+    watchlist list. Klaviyo flow filters Brand Deal Posted events on
+    profile.watched_brands contains event.brand."""
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    brands_in = body.get("brands") or []
+    if not _is_valid_email(email):
+        return jsonify({"error": "Invalid email"}), 400
+    if not isinstance(brands_in, list) or not brands_in:
+        return jsonify({"error": "At least one brand required"}), 400
+    valid_brand_names = {b["name"] for b in BRANDS}
+    valid = sorted({b for b in brands_in if isinstance(b, str) and b in valid_brand_names})
+    if not valid:
+        return jsonify({"error": "No valid brands"}), 400
+    if not _klaviyo_enabled():
+        logger.warning("⚠️  /api/watch hit but Klaviyo not configured")
+        return jsonify({"ok": False, "error": "Alerts not configured"}), 503
+
+    existing = klaviyo_get_profile_properties(email)
+    existing_brands = set(existing.get("watched_brands") or [])
+    merged = sorted(existing_brands | set(valid))
+
+    klaviyo_upsert_profile_properties(email, {"watched_brands": merged})
+    klaviyo_subscribe(email, KLAVIYO_WATCHLIST_LIST_ID)
+
+    return jsonify({"ok": True, "watched_brands": merged, "added": valid})
+
+
+@app.route('/api/watch-nuke', methods=['POST'])
+@limiter.limit("5 per minute")
+def api_watch_nuke():
+    """Tactical Nuke list signup. Separate list from /api/watch so the
+    scarcity promise ('only emails when it's worth it') is enforceable."""
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    if not _is_valid_email(email):
+        return jsonify({"error": "Invalid email"}), 400
+    if not _klaviyo_enabled():
+        return jsonify({"ok": False, "error": "Alerts not configured"}), 503
+    if not KLAVIYO_NUKE_LIST_ID:
+        return jsonify({"ok": False, "error": "Nuke list not configured"}), 503
+    if not klaviyo_subscribe(email, KLAVIYO_NUKE_LIST_ID):
+        return jsonify({"ok": False, "error": "Subscribe failed"}), 502
+    return jsonify({"ok": True})
+
+
+@app.route('/api/digest')
+def api_digest():
+    """Paste-ready source for a weekly Klaviyo campaign assembled by a human.
+    Returns: top 10 fresh deals by pct_off, new codes this week, biggest
+    price drops from history, new drops. Admin auth required."""
+    if not check_admin_auth():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = load_data()
+    cutoff_7d_iso = (datetime.now() - timedelta(days=7)).isoformat()
+
+    def _pct(item):
+        return item.get("pct_off") or item.get("discount") or 0
+
+    # Top 10 fresh deals + clearance by pct_off
+    candidates = (data.get("promos") or []) + (data.get("clearance") or [])
+    fresh = [
+        d for d in candidates
+        if d.get("first_seen") and d["first_seen"] >= cutoff_7d_iso and _pct(d) >= 10
+    ]
+    fresh.sort(key=_pct, reverse=True)
+    top_deals = fresh[:10]
+
+    # New codes this week
+    new_codes = [
+        c for c in (data.get("codes") or [])
+        if c.get("first_seen") and c["first_seen"] >= cutoff_7d_iso
+    ]
+    new_codes.sort(key=lambda c: c.get("first_seen", ""), reverse=True)
+
+    # Biggest price drops from price_history
+    price_drops = []
+    try:
+        history = safe_read_json(PRICE_HISTORY_FILE, {})
+        for key, snaps in history.items():
+            recent = [s for s in snaps if s.get("ts", "") >= cutoff_7d_iso]
+            if len(recent) < 2:
+                continue
+            recent.sort(key=lambda s: s["ts"])
+            old_price = recent[0].get("price") or 0
+            new_price = recent[-1].get("price") or 0
+            if old_price > 0 and new_price and new_price < old_price:
+                drop_pct = round((1 - new_price / old_price) * 100)
+                if drop_pct >= 5:
+                    price_drops.append({
+                        "product_key": key,
+                        "old_price": old_price,
+                        "new_price": new_price,
+                        "drop_pct": drop_pct,
+                    })
+        price_drops.sort(key=lambda d: d["drop_pct"], reverse=True)
+        price_drops = price_drops[:10]
+    except Exception as e:
+        logger.warning(f"⚠️  digest price-drops calc failed: {e}")
+
+    # Newest drops this week
+    new_drops = [
+        d for d in (data.get("newDrops") or [])
+        if d.get("is_new") or (d.get("first_seen") and d["first_seen"] >= cutoff_7d_iso)
+    ][:10]
+
+    return jsonify({
+        "generated_at": datetime.now().isoformat(),
+        "top_deals": top_deals,
+        "new_codes": new_codes[:10],
+        "price_drops": price_drops,
+        "new_drops": new_drops,
+    })
 
 
 # =============================================================================
